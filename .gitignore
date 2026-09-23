@@ -1,0 +1,5 @@
+node_modules/
+*.mcpb
+.disjuntor_estado_trf1.json
+.disjuntor_estado_trf1.json.lock
+.DS_Store

@@ -1,0 +1,64 @@
+{
+  "manifest_version": "0.2",
+  "name": "trf1-jurisprudencia",
+  "display_name": "Jurisprudência TRF1",
+  "version": "1.1.0",
+  "description": "Busca de jurisprudência do TRF1 e da TNU (portal público do CJF), direto no Claude.",
+  "long_description": "Adiciona ao Claude quatro ferramentas para a jurisprudência do Tribunal Regional Federal da 1ª Região (TRF1 e Turmas Recursais/JEF1) e da Turma Nacional de Uniformização (TNU), pesquisada no portal público do Conselho da Justiça Federal (jurisprudencia.cjf.jus.br), sem login. **buscar_jurisprudencia_trf1** pesquisa por tema na sintaxe do motor (E/OU/NAO/ADJn/PROXn/COM/MESMO/$/[CAMPO]) ou por `grupos` de sinônimos montados pela ferramenta (OU dentro do grupo, E entre grupos), com filtros do painel avançado na base TRF1 (relator, órgão, classe, origem, número, período). **obter_decisao_trf1** traz todos os documentos publicados sob um número de processo com ementa e dispositivo integrais — e, na TNU, também o inteiro teor (relatório e voto) baixado do eproc, com órgão/relator/data lidos do fecho do acórdão; grava um recibo em disco a cada chamada. **verificar_citacao_trf1** confere se um trecho aparece literalmente no texto antes de ir entre aspas para a peça e, na TNU, avisa de quem é a frase (transcrição de outro tribunal, voto divergente, alegação da parte, entre aspas, negação). **diagnostico_ritmo_trf1** explica por que as buscas podem estar falhando, sem consultar o portal. AVISO: integração não-oficial, mantida por um advogado (não pelo CJF/TRF1); na base TRF1 o portal nunca expõe o voto, só ementa e dispositivo — confirme número, relator, órgão e data antes de citar em peça.",
+  "author": {
+    "name": "Roberto Grécia Bessa (OAB/RO 7865-A)"
+  },
+  "license": "MIT",
+  "keywords": [
+    "jurisprudência",
+    "trf1",
+    "tnu",
+    "justiça federal",
+    "jurídico",
+    "advocacia",
+    "direito"
+  ],
+  "privacy_policies": [
+    "https://www.cjf.jus.br/"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
+      "env": {}
+    }
+  },
+  "tools": [
+    {
+      "name": "buscar_jurisprudencia_trf1",
+      "description": "Pesquisa jurisprudência do TRF1/JEF1 e da TNU (portal do CJF) por tema, com operadores do motor e `grupos` de sinônimos. Cada resultado traz citação pronta (hiperlinkada quando há link específico do documento), nível de verificação e sinais do julgado."
+    },
+    {
+      "name": "obter_decisao_trf1",
+      "description": "Todos os documentos publicados sob um número de processo, com ementa e dispositivo integrais — e, na TNU, o inteiro teor com órgão/relator/data lidos do fecho. Grava recibo em disco."
+    },
+    {
+      "name": "verificar_citacao_trf1",
+      "description": "Confere se um trecho aparece literalmente antes de citar, e diz de quem é a frase (transcrição, voto divergente, alegação da parte, entre aspas, negação) na TNU."
+    },
+    {
+      "name": "diagnostico_ritmo_trf1",
+      "description": "Explica por que as buscas podem estar falhando (limite de ritmo, bloqueio em curso, histórico). Não consulta o portal."
+    }
+  ],
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=18.14.0"
+    }
+  }
+}
