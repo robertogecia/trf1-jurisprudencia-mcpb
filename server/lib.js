@@ -13,8 +13,9 @@ import os from "node:os";
 import path from "node:path";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
 import { norm1, alegacaoDaParte, negacaoEscopo, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
+import { posicaoTnu } from "./posicao2.js";
 
-export const VERSAO = "1.2.2";
+export const VERSAO = "1.3.0";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -562,7 +563,17 @@ export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) 
   const ob = comAtribuicao && !emTranscricao && fx && !alertas.some((a) => a.startsWith("ENTRE ASPAS")) ? obiterAntes(nt, fx[0], fx[1], bruto) : null;
   if (ob)
     alertas.push(`OBITER DICTUM?: o trecho vem sob «${ob}» — raciocínio hipotético ou fundamento alternativo; o resultado do julgado não dependeu dele. Vale como reforço, não como ratio decidendi; cite dizendo que é obiter.`);
-  return { ok: true, alertas, contexto: tn.slice(Math.max(0, (ini0 || 0) - 120), pos + 120).replace(/\s+/g, " "), spans, tn };
+  const posicao = comAtribuicao && fx && tribunal === "TNU" ? posicaoTnu(bruto, Math.floor((fx[0] + fx[1]) / 2)) : "";
+  if (posicao && comAtribuicao) {
+    // espelho do Python: na TNU o voto de outro juiz vem do título do documento (gabarito cego de 06/10/2026: 85% × 62%)
+    let k = alertas.findIndex((x) => x.startsWith("VOTO DIVERGENTE"));
+    if (k >= 0) alertas.splice(k, 1); else k = null;
+    if (posicao.startsWith("VOTO de outro juiz") || posicao.startsWith("VOTO do relator VENCIDO"))
+      alertas.splice(k !== null ? k : (emTranscricao ? 1 : 0), 0, "VOTO DIVERGENTE: o trecho está num voto que NÃO é o de quem lavrou o acórdão (vista, divergente, vogal ou o " +
+        "do relator vencido) — pode ter ficado vencido ou só acompanhado. Leia o acórdão/extrato de ata antes de citar " +
+        "como entendimento da TNU.");
+  }
+  return { ok: true, alertas, contexto: tn.slice(Math.max(0, (ini0 || 0) - 120), pos + 120).replace(/\s+/g, " "), spans, tn, posicao };
 }
 
 // ------------------------------------------------------ fecho do inteiro teor da TNU ---
@@ -965,7 +976,7 @@ export function verificarTrecho(textos, trecho, tribunal = "TRF1") {
     if (!(texto || "").trim()) continue;
     const r = conferir(texto, trecho, tribunal, nome === "inteiro teor");
     if (r.ok) {
-      return { valido: true, onde: nome, faltando: [], alertas: r.alertas, contexto: r.contexto, motivo: `trecho encontrado literalmente em: ${nome}` };
+      return { valido: true, onde: nome, faltando: [], alertas: r.alertas, contexto: r.contexto, posicao: r.posicao || "", motivo: `trecho encontrado literalmente em: ${nome}` };
     }
     if (r.fragmento && (!melhorErro || "erro" in r)) melhorErro = r;
   }
@@ -1652,6 +1663,7 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
     if (r.valido && r.alertas.length) marca = "✅ LITERAL, MAS COM ALERTA DE ATRIBUIÇÃO";
     linhas.push(`${marca} · id ${d.id} · ${d.tipo || "?"} · julgado em ${d.data_fecho || d.data_julgamento || "?"} · ${r.motivo}`);
     for (const al of r.alertas || []) linhas.push(`   ⚠️ ${al}`);
+    if (r.valido && r.posicao) linhas.push(`   ℹ POSIÇÃO NO JULGADO: ${r.posicao}.`);
     if (r.valido && r.contexto) linhas.push(`   contexto: …${r.contexto.slice(0, 300)}…`);
     if (!r.valido && r.faltando?.length) for (const f of r.faltando.slice(0, 3)) linhas.push(`   fragmento sem correspondência: «${f.slice(0, 160)}»`);
   }
