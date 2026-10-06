@@ -104,7 +104,7 @@ test("conferir — TRANSCRIÇÃO, VOTO DIVERGENTE, ALEGAÇÃO DA PARTE, NEGAÇÃ
     "a percepção do benefício quando comprovada a incapacidade. Recurso conhecido e provido. " +
     "(STJ, REsp 1.234.567/RS, Rel. Min. Fulano, DJe 01/01/2020). No caso dos autos, entendo que a " +
     "incapacidade ficou provada e o retorno ao trabalho foi tentativa frustrada. Fixo a seguinte tese: " +
-    "'o retorno ao trabalho por tentativa não afasta o direito ao benefício'. Não há como acolher o pedido " +
+    "\"o retorno ao trabalho por tentativa não afasta o direito ao benefício\". Não há como acolher o pedido " +
     "de repetição dos valores recebidos de boa-fé. Peço vênia para divergir do relator: o retorno ao trabalho " +
     "afasta o benefício desde o primeiro dia.";
   const r1 = lib.conferir(votoTr, "o retorno ao trabalho não impede a percepção do benefício", "TNU", true);
@@ -117,7 +117,7 @@ test("conferir — TRANSCRIÇÃO, VOTO DIVERGENTE, ALEGAÇÃO DA PARTE, NEGAÇÃ
   assert.ok(r4.ok && r4.alertas.some((a) => a.startsWith("NEGAÇÃO")));
   const r5 = lib.conferir(votoTr, "o retorno ao trabalho por tentativa não afasta o direito ao benefício", "TNU", true);
   assert.ok(r5.ok && !r5.alertas.some((a) => a.startsWith("ENTRE ASPAS")), "tese própria não deveria disparar ENTRE ASPAS");
-  const votoQ = "VOTO. Como ensina a doutrina: 'a boa-fé objetiva impõe deveres anexos de conduta às partes'. Entendo aplicável.";
+  const votoQ = "VOTO. Como ensina a doutrina: \"a boa-fé objetiva impõe deveres anexos de conduta às partes\". Entendo aplicável.";
   const r6 = lib.conferir(votoQ, "a boa-fé objetiva impõe deveres anexos de conduta", "TNU", true);
   assert.ok(r6.ok && r6.alertas.some((a) => a.startsWith("ENTRE ASPAS")));
   const r7 = lib.conferir(votoTr, "o retorno ao trabalho não impede a percepção do benefício", "TRF1", false);
