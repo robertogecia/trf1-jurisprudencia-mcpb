@@ -12,9 +12,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
-import { norm1, alegacaoDaParte, negacaoEscopo, entreAspas, obiterAntes } from "./atribuicao13.js";
+import { norm1, alegacaoDaParte, negacaoEscopo, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 
-export const VERSAO = "1.2.1";
+export const VERSAO = "1.2.2";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -485,7 +485,8 @@ export function bruto(corpo, tn, posNorm) {
   return chute;
 }
 
-const normalizarCasamento = (t) => (norm(t).match(/[a-z0-9]+/g) || []).join(" ");
+// a MESMA dobra do texto (norm1): com norm() o "º" de "nº" não casava (06/10/2026)
+const normalizarCasamento = (t) => (norm1(t).match(/[a-z0-9]+/g) || []).join(" ");
 const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** _faixa_norm: posição do trecho em norm1(bruto) (mesmo comprimento do bruto), ocorrência mais próxima do casamento oficial. */
 export function faixaNorm(nt, fragmentos, pertoDe = 0.0) {
@@ -688,7 +689,7 @@ export function camposDeCustodia(d) {
     texto, ementa: d.ementa || "", dispositivo: d.decisao || "",
     inteiro_teor_incluido: Boolean(it),
     inteiro_teor: it,
-    trechos_transcritos: transcritos, trecho_divergente: divergente,
+    trechos_transcritos: transcritos, trecho_divergente: divergente, trechos_obiter: it ? trechosObiter(it) : [],
     normalizacao: "trechos em bruto, recortados de `texto` — normalize com a sua própria função",
     sha256: crypto.createHash("sha256").update(texto, "utf-8").digest("hex"),
     versao_servidor: VERSAO,

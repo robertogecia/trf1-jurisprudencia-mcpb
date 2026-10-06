@@ -106,7 +106,7 @@ export function alegacaoDaParte(tn, ini0, fim = null, bruto = null) {
 }
 
 const RE_NEG_OPERADOR = /(?<![a-z0-9])(?:nao|jamais|nunca|nem|descabe|descabid[oa]s?|incabive(?:l|is)|afasta-se|afasto|afastad[oa]s?|rejeita-se|rejeito|rejeitad[oa]s?|nego|negou|negar|nega-se|negam|improcede|julg(?:ou|o|ar|aram|ada|ado|ados|adas)[ \t\n\r\f\v]+improcedentes?|inexist(?:e|em|ir|iu|indo)|carece|carecem|impossibilidade de|sem razao|sem razoes)(?![a-z0-9])/g;
-const RE_NEG_FALSA = /^[ \t\n\r\f\v]*(?:obstante|so\b|apenas|somente|se[ \t\n\r\f\v]+confunde|(?:havendo|ha|houve|resta|restam|restando|pairam?)[ \t\n\r\f\v]+(?:qualquer[ \t\n\r\f\v]+|mais[ \t\n\r\f\v]+)?duvidas?)/;
+const RE_NEG_FALSA = /^[ \t\n\r\f\v]*(?:obstante|so\b|apenas|somente|se[ \t\n\r\f\v]+confunde|fosse\b|(?:havendo|ha|houve|resta|restam|restando|pairam?)[ \t\n\r\f\v]+(?:qualquer[ \t\n\r\f\v]+|mais[ \t\n\r\f\v]+)?duvidas?)/;
 const RE_QUEBRA_ORACAO = /[.;:]|,[ \t\n\r\f\v]*(?:mas|e|ou|que|o que|de forma|de modo|sendo|alem|conforme|porque|pois|porquanto|embora|ainda|razao pela|motivo pelo|[a-z]+ndo)(?![a-z0-9])|[ \t\n\r\f\v]mas[ \t\n\r\f\v]/;
 const NEGACAO_JANELA = 80, NEGACAO_ALCANCE_MIN = 3;
 const tiraEspacos = (s) => s.replace(/^ +| +$/g, "");
@@ -196,4 +196,30 @@ export function obiterAntes(tn, ini0, fim, bruto) {
   let m = null;
   for (const x of tn.slice(frase0, cabeca).matchAll(RE_OBITER)) m = x;
   return m ? m[0] : null;
+}
+
+/** _trechos_obiter (recibo, 06/10/2026): da marca de obiter ao fim da frase, em BRUTO, fora de citação entre aspas. */
+export function trechosObiter(texto, ini = 0, fim = null) {
+  fim = fim === null ? texto.length : fim;
+  const nt = norm1(texto);
+  const cit = trechosCitados(texto).filter(([a, b]) => b > ini && a < fim);
+  const out = [];
+  let ate = -1;
+  const re = new RegExp(RE_OBITER.source, "g");
+  re.lastIndex = ini;
+  for (let m; (m = re.exec(nt)) && m.index < fim;) {
+    if (m.index < ate || cit.some(([a, b]) => m.index >= a && m.index < b)) continue;
+    const fimM = m.index + m[0].length;
+    let b = Math.min(fim, m.index + 600);
+    const rf = /[.;!?]["”’)\]]?[ \t\n\r\f\v]+(?=["“‘(\[]?[A-ZÀ-Ý0-9])/g;
+    const seg = texto.slice(fimM, b);
+    for (let f; (f = rf.exec(seg));) {
+      const p = fimM + f.index;
+      if (f[0][0] === "." && /(?:^|[^a-z0-9])(?:art|arts|n|no|nos|fl|fls|id|ids|des|dr|min|rel|inc|p|pp|proc|cf|res|sum|v|vol|al|ss)$/.test(nt.slice(Math.max(0, p - 8), p))) continue;
+      b = p + 1; break;
+    }
+    out.push(texto.slice(m.index, b));
+    ate = b;
+  }
+  return out;
 }

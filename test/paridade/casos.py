@@ -38,4 +38,12 @@ dif = [i for i, (a, b) in enumerate(zip(py, nd)) if a != b]
 print(f"paridade conferir: {len(casos)} casos · {len(casos) - len(dif)} idênticos · {len(dif)} diferentes")
 for i in dif[:8]:
     print("  ", repr(casos[i]["trecho"][:70]), "\n     py:", py[i]["alertas"], py[i]["spans"], "\n   node:", nd[i]["alertas"], nd[i]["spans"])
-sys.exit(1 if dif else 0)
+# trechos_obiter do recibo (06/10/2026): mesma lista nos dois lados, sobre cada texto
+textos = sorted({c["texto"] for c in casos})
+ob_py = [s._trechos_obiter(t) for t in textos]
+ent2 = os.path.join(AQUI, "_textos.json"); json.dump(textos, open(ent2, "w"), ensure_ascii=False)
+ob_nd = json.loads(subprocess.run(["node", "-e", "import('" + os.path.join(AQUI, "..", "..", "server", "atribuicao13.js") + "').then(m=>{const fs=require('fs');process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).map(t=>m.trechosObiter(t))))})", ent2], capture_output=True, text=True, check=True).stdout)
+os.remove(ent2)
+dif_ob = [i for i, (a, b) in enumerate(zip(ob_py, ob_nd)) if a != b]
+print(f"paridade trechos_obiter: {len(textos)} textos · {len(textos) - len(dif_ob)} idênticos · {len(dif_ob)} diferentes ({sum(len(x) for x in ob_py)} trechos)")
+sys.exit(1 if dif or dif_ob else 0)
