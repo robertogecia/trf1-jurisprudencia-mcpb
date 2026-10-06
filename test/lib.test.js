@@ -327,3 +327,8 @@ test("filtrarPorNumero — igual ou prefixo; nunca vazio", () => {
   assert.deepEqual(lib.filtrarPorNumero(docs, "12345678901234567890").map((d) => d.numero_digitos), ["12345678901234567890"]);
   assert.deepEqual(lib.filtrarPorNumero(docs, "1234567").map((d) => d.numero_digitos), ["12345678901234567890", "1234567"]);
 });
+
+test("v1.2.1: 'sem razão' é operador de NEGAÇÃO (paridade com o Python)", () => {
+  const r = lib.conferir("VOTO Sem razão o apelante ao dizer que o benefício é devido desde o requerimento administrativo.", "o benefício é devido desde o requerimento", "TRF1", true);
+  assert.ok(r.ok && r.alertas.some((a) => a.startsWith("NEGAÇÃO")), JSON.stringify(r.alertas));
+});

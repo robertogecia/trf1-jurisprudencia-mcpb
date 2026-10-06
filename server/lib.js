@@ -14,7 +14,7 @@ import path from "node:path";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
 import { norm1, alegacaoDaParte, negacaoEscopo, entreAspas, obiterAntes } from "./atribuicao13.js";
 
-export const VERSAO = "1.2.0";
+export const VERSAO = "1.2.1";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
