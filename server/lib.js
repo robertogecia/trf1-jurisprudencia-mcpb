@@ -12,10 +12,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
-import { norm1, alegacaoDaParte, negacaoEscopo, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
+import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu } from "./posicao2.js";
 
-export const VERSAO = "1.3.0";
+export const VERSAO = "1.4.0";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -559,7 +559,8 @@ export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) 
       alertas.push("ALEGAÇÃO DA PARTE: o texto relata o que uma parte (INSS, União, recorrente…) sustenta, alega ou requer logo antes do trecho — o trecho pode ser tese da parte, não decisão do tribunal. Confira no relatório/voto quem fala.");
   }
   if (fx && negacaoEscopo(nt, fx[0], fx[1], bruto))
-    alertas.push("NEGAÇÃO: há negativa logo antes do trecho — o recorte pode inverter o julgado. Não citar sem ler a frase inteira.");
+    alertas.push(negacaoProxima(nt, fx[0]) ? "NEGAÇÃO: há negativa logo antes do trecho — o recorte pode inverter o julgado. Não citar sem ler a frase inteira."
+      : "NEGAÇÃO (distante)?: há uma negativa algumas palavras antes do trecho, fora dele. Na maioria das vezes ela fecha a própria oração e não inverte o recorte (medido às cegas), mas leia a frase inteira antes de citar.");
   const ob = comAtribuicao && !emTranscricao && fx && !alertas.some((a) => a.startsWith("ENTRE ASPAS")) ? obiterAntes(nt, fx[0], fx[1], bruto) : null;
   if (ob)
     alertas.push(`OBITER DICTUM?: o trecho vem sob «${ob}» — raciocínio hipotético ou fundamento alternativo; o resultado do julgado não dependeu dele. Vale como reforço, não como ratio decidendi; cite dizendo que é obiter.`);
