@@ -1,6 +1,6 @@
 {
   "name": "trf1-jurisprudencia-mcp",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Busca de jurisprudência do TRF1 e da TNU (portal do CJF) como ferramentas MCP",
   "type": "module",
   "private": true,
