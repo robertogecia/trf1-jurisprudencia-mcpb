@@ -15,7 +15,7 @@ import path from "node:path";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu } from "./posicao2.js";
 
-export const VERSAO = "1.4.0";
+export const VERSAO = "1.4.1";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -1692,8 +1692,11 @@ export function comCredito(texto) {
 }
 export function _resetCreditoParaTeste() { creditoDado = false; }
 
-export const RELEASES_API = `https://api.github.com/repos/${REPO_GITHUB}/releases/latest`;
-export const RELEASES_PAGINA = `https://github.com/${REPO_GITHUB}/releases/latest`;
+// (07/10/2026) a versão nova e o .mcpb são publicados no repositório da EXTENSÃO; o do Python não traz o pacote
+export const REPO_RELEASES = "robertogecia/trf1-jurisprudencia-mcpb";
+export const RELEASES_API = `https://api.github.com/repos/${REPO_RELEASES}/releases/latest`;
+export const RELEASES_PAGINA = `https://github.com/${REPO_RELEASES}/releases/latest`;
+export const PACOTE_MCPB_URL = `https://github.com/${REPO_RELEASES}/releases/latest/download/Jurisprudencia-TRF1.mcpb`;
 const RE_TAG = /^v?(\d{1,4})\.(\d{1,4})\.(\d{1,4})$/;
 
 export function versaoMaisNova(atual, outra) {
@@ -1723,7 +1726,7 @@ export async function checarVersaoNova({ atual = VERSAO, fetchImpl = globalThis.
     return null;
   }
 }
-export const avisoAtualizacao = (novaVersao) => `_Há uma versão mais nova desta extensão (v${novaVersao}; a instalada é a v${VERSAO})._ ${RELEASES_PAGINA}`;
+export const avisoAtualizacao = (novaVersao) => `⬆️ Há versão nova desta extensão (v${novaVersao}; a instalada é a v${VERSAO}).\nBaixar: ${PACOTE_MCPB_URL}\nDepois dê dois cliques no arquivo baixado e reinicie o Claude Desktop. O que mudou: ${RELEASES_PAGINA}`;
 
 let checagem = null, avisoDado = false;
 export function iniciarChecagemVersao(opcoes) {
