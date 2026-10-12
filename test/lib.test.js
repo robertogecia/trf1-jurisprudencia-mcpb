@@ -508,3 +508,8 @@ test("estado do disjuntor: caminho absoluto de usuário, sem %20 nem barra antes
   assert.ok(path.isAbsolute(c), c);
   assert.ok(!/%20|^[\\/][A-Za-z]:/.test(c), c);
 });
+
+test("origem que não casa: o zero é atribuído ao filtro, não ao assunto (relato Windows 12/10/2026)", () => {
+  const out = lib.formatBusca([], 0, { consulta_montada: "consignado", tipos: [], fontes: [], pagina: 1, por_pagina: 10, filtros: { origem: "RO" }, base: "trf1" });
+  assert.match(out, /filtro `origem`.*TRIBUNAL de origem/);
+});

@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.5.1";
+export const VERSAO = "1.5.2";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -943,6 +943,9 @@ export function formatBusca(docs, total, meta) {
   for (const a of meta.avisos || []) linhas.push(`⚠️ ${a}`);
   if (total > 3000 && pagina === 1) {
     linhas.push('Dica: total alto — restrinja com `E` (ex.: `"dano moral" E negativação`), com `grupos`, com `[EMEN]` para buscar só na ementa, ou com filtro de órgão/relator/data.');
+  }
+  if (!docs.length && !total && filtros.origem) {
+    linhas.push('⚠️ O filtro `origem` casa o campo "Origem" do portal, que é o TRIBUNAL de origem (nos resultados aparece "TRF - PRIMEIRA REGIÃO"), e NÃO o estado nem a seção judiciária: "RO" ou "Rondônia" nunca casam. Refaça sem `origem`; a unidade de origem aparece nos 4 últimos dígitos do número CNJ de cada resultado (ex.: .4.01.4100). Zero aqui foi do filtro, não do assunto.');
   }
   if (!docs.length) {
     linhas.push("\nNenhum resultado nesta página. Se o total é 0: a busca casa PALAVRAS — tente sinônimos com `OU` ou `grupos`, radical com `$` (`desapropria$`), a súmula/tema que os julgados do assunto citam, e confira se não há preposição/pontuação na consulta (o motor não aceita). Se o total é > 0, a página pedida está além do fim.");
