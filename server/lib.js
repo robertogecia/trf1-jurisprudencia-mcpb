@@ -11,11 +11,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.5.0";
+export const VERSAO = "1.5.1";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -1116,7 +1117,18 @@ const MIN_REQS_PARA_ESCADA = 3;
 const PAUSA_ILEGIVEL_MS = 10 * 60_000;
 const MAX_INCIDENTES = 20;
 
-let arquivoEstadoDisjuntor = path.join(path.dirname(new URL(import.meta.url).pathname), ".disjuntor_estado_trf1.json");
+// O estado do disjuntor fica numa pasta do USUÁRIO (escrita garantida), nunca dentro da pasta da extensão: ela é reescrita a cada
+// atualização e, no Windows, `new URL(import.meta.url).pathname` dava "\\C:\\...\\Claude%20Extensions" (relato de 12/10/2026).
+function dirEstadoDisjuntor() {
+  const cand = [process.env.TRF1_MCP_DIR_ESTADO, path.join(os.homedir(), ".trf1-jurisprudencia"),
+                path.dirname(fileURLToPath(import.meta.url))].filter(Boolean);
+  for (const d of cand) {
+    try { fs.mkdirSync(d, { recursive: true, mode: 0o700 }); fs.accessSync(d, fs.constants.W_OK); return d; } catch { /* tenta o próximo */ }
+  }
+  return cand[cand.length - 1];
+}
+let arquivoEstadoDisjuntor = path.join(dirEstadoDisjuntor(), ".disjuntor_estado_trf1.json");
+let ultimoErroTrava = "";
 export function _setArquivoEstadoParaTeste(caminho) {
   arquivoEstadoDisjuntor = caminho;
 }
@@ -1140,6 +1152,7 @@ function comTrava(fn) {
   let fd = null;
   for (;;) {
     try { fd = fs.openSync(lock, "wx"); break; } catch (e) {
+      ultimoErroTrava = `${e.code || "erro"}${e.message ? `: ${String(e.message).slice(0, 120)}` : ""}`;
       if (e.code !== "EEXIST" || Date.now() > limite) break;
       try {
         const st = fs.statSync(lock);
@@ -1211,7 +1224,7 @@ function transacao(fn, obrigatoria = false) {
       persistenciaIndisponivel = `sem trava em ${arquivoEstadoDisjuntor}.lock`;
       if (obrigatoria) {
         throw new PesquisaNaoRealizada(
-          `não consegui a trava do disjuntor (${arquivoEstadoDisjuntor}.lock — permissão?); sem trava não há como dividir o orçamento entre processos, e sem isso não há requisição (fail-closed). Não contornar por navegador, proxy ou outro cliente.`
+          `não consegui a trava do disjuntor (${arquivoEstadoDisjuntor}.lock — erro real: ${ultimoErroTrava || "desconhecido"}); sem trava não há como dividir o orçamento entre processos, e sem isso não há requisição (fail-closed). Não contornar por navegador, proxy ou outro cliente.`
         );
       }
     }
