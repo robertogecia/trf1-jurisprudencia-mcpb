@@ -501,3 +501,10 @@ test("v1.5.0 red team 12/10/2026: regressões (votação, sanitização, args, r
   assert.ok(f1 && !f1[1].includes("Nego"));
   assert.equal(lib.fatosDoJulgado("RELATÓRIO\nRelatório dispensado (art. 38 da Lei 9.099/95), conforme a regra do rito sumaríssimo.\nVOTO\nNego provimento.\n"), null);
 });
+
+test("estado do disjuntor: caminho absoluto de usuário, sem %20 nem barra antes da letra do drive (relato Windows 12/10/2026)", async () => {
+  const m = await import("../server/lib.js");
+  const c = m._arquivoEstadoAtual();
+  assert.ok(path.isAbsolute(c), c);
+  assert.ok(!/%20|^[\\/][A-Za-z]:/.test(c), c);
+});
