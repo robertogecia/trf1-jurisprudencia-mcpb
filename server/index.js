@@ -77,13 +77,13 @@ server.registerTool(
             "Expressão com espaço vira frase exata; `$` só no fim de palavra; `termo[EMEN]` no fim de um termo restringe ao campo. " +
             "Cada grupo descreve o FATO julgado, nunca a CONCLUSÃO esperada."
         ),
-      relator: z.string().optional().describe("Campo 'Origem' do portal = TRIBUNAL de origem (nos resultados: 'TRF - PRIMEIRA REGIÃO'); NÃO é estado nem seção judiciária — 'RO' retorna zero. Só base 'trf1'."),
-      orgao_julgador: z.string().optional().describe("Campo 'Origem' do portal = TRIBUNAL de origem (nos resultados: 'TRF - PRIMEIRA REGIÃO'); NÃO é estado nem seção judiciária — 'RO' retorna zero. Só base 'trf1'."),
-      classe: z.string().optional().describe("Campo 'Origem' do portal = TRIBUNAL de origem (nos resultados: 'TRF - PRIMEIRA REGIÃO'); NÃO é estado nem seção judiciária — 'RO' retorna zero. Só base 'trf1'."),
+      relator: z.string().optional().describe("Nome (ou parte) do relator. Filtro do painel avançado (só base 'trf1')."),
+      orgao_julgador: z.string().optional().describe("Órgão julgador, ex.: 'QUINTA TURMA', 'SEGUNDA SEÇÃO'. Filtro do painel avançado (só base 'trf1')."),
+      classe: z.string().optional().describe("Sigla ou nome da classe, ex.: 'AC', 'AMS', 'AG'. Filtro do painel avançado (só base 'trf1')."),
       origem: z.string().optional().describe("Campo 'Origem' do portal = TRIBUNAL de origem (nos resultados: 'TRF - PRIMEIRA REGIÃO'); NÃO é estado nem seção judiciária — 'RO' retorna zero. Só base 'trf1'."),
       numero: z.string().optional().describe("Número do processo (CNJ), com ou sem pontuação (só base 'trf1')."),
-      ementa_decisao: z.string().optional().describe("Campo 'Origem' do portal = TRIBUNAL de origem (nos resultados: 'TRF - PRIMEIRA REGIÃO'); NÃO é estado nem seção judiciária — 'RO' retorna zero. Só base 'trf1'."),
-      referencia_legislativa: z.string().optional().describe("Campo 'Origem' do portal = TRIBUNAL de origem (nos resultados: 'TRF - PRIMEIRA REGIÃO'); NÃO é estado nem seção judiciária — 'RO' retorna zero. Só base 'trf1'."),
+      ementa_decisao: z.string().optional().describe("Termos buscados SÓ na ementa e no dispositivo (a consulta livre varre tudo). Filtro do painel avançado (só base 'trf1')."),
+      referencia_legislativa: z.string().optional().describe("Norma indexada manualmente pelo portal, ex.: 'lei 8429'; cobertura parcial: zero aqui NÃO significa que não há acórdãos sobre a norma. Só base 'trf1'."),
       data_inicio: z.string().optional().describe("AAAA-MM-DD ou DD/MM/AAAA."),
       data_fim: z.string().optional().describe("AAAA-MM-DD ou DD/MM/AAAA."),
       tipo_data: z.enum(["julgamento", "publicacao"]).optional().describe("Padrão 'julgamento'."),

@@ -513,3 +513,31 @@ test("origem que não casa: o zero é atribuído ao filtro, não ao assunto (rel
   const out = lib.formatBusca([], 0, { consulta_montada: "consignado", tipos: [], fontes: [], pagina: 1, por_pagina: 10, filtros: { origem: "RO" }, base: "trf1" });
   assert.match(out, /filtro `origem`.*TRIBUNAL de origem/);
 });
+
+test("origem: UF, seção judiciária e estado são recusados ANTES da requisição; o campo certo passa", async () => {
+  assert.ok(lib.validarOrigem("RO") && lib.validarOrigem("SEÇÃO JUDICIÁRIA DE RONDÔNIA") && lib.validarOrigem("Rondônia"));
+  assert.equal(lib.validarOrigem("TRF - PRIMEIRA REGIÃO"), "");
+  let chamou = false;
+  const out = await lib.buscar({ consulta: "x", origem: "RO", base: "trf1" }, async () => { chamou = true; throw new Error("não devia chamar"); });
+  assert.match(out, /Erro de parâmetro.*Nada foi consultado/s);
+  assert.equal(chamou, false);
+});
+
+test("diário: rede local, certificado e conexão interrompida são tipos diferentes", () => {
+  assert.equal(lib.tipoDoErroDiario("getaddrinfo ENOTFOUND x"), "dns_ou_rede_local");
+  assert.equal(lib.tipoDoErroDiario("unable to verify the first certificate"), "certificado");
+  assert.equal(lib.tipoDoErroDiario("TypeError: fetch failed — causa: ECONNRESET"), "conexao_interrompida");
+});
+
+test("regressão v1.5.2: cada parâmetro do painel avançado tem a SUA descrição (relator, órgão, classe, origem, ementa, referência)", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "server", "index.js"), "utf-8");
+  const descr = {};
+  for (const k of ["relator", "orgao_julgador", "classe", "origem", "ementa_decisao", "referencia_legislativa"]) {
+    const m = new RegExp(`\\n\\s+${k}: z\\.string\\(\\)\\.optional\\(\\)\\.describe\\("([^"]+)"`).exec(src);
+    assert.ok(m, k);
+    descr[k] = m[1];
+  }
+  assert.equal(new Set(Object.values(descr)).size, 6, JSON.stringify(descr));
+  assert.match(descr.origem, /TRIBUNAL de origem/);
+  assert.doesNotMatch(descr.relator, /Origem/);
+});
