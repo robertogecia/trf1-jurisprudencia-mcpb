@@ -85,6 +85,19 @@ O que você recebe de volta:
 - **Um recibo guardado no seu computador** com o texto que o tribunal entregou, toda vez que uma
   decisão é aberta — serve para provar depois que a citação da peça veio do documento, não da
   imaginação da IA.
+- **Como o colegiado votou**, quando o próprio dispositivo diz (unânime, por maioria, com
+  declaração de voto), e, na TNU, **um trecho literal dos fatos do julgado**, copiado do próprio
+  acórdão e marcado como tal — nunca um resumo feito pela IA.
+- **Reencontrar o que você já leu, sem internet.** Peça "procure nos julgados que já abri" e a
+  extensão varre só os recibos guardados no seu computador: não gasta consulta ao portal. Se não
+  achar nada, isso **não** quer dizer que o julgado não existe, só que você ainda não o abriu.
+- **Quem cita um precedente e como ele andou no tempo.** Dado o número de um processo, a extensão
+  lista os julgados que o citam (com o trecho em volta) e, para uma tese, conta ano a ano quantos
+  acórdãos há e como foram decididos. São pistas para você ler, não prova de que o precedente foi
+  superado.
+- **Um diário de problemas, sem espionar você.** Quando uma consulta falha, a extensão anota só o
+  tipo do erro, nunca o que você pesquisou, nem nomes, nem número de processo. Se algo persistir,
+  peça "gere o relatório de erros" e cole o resultado ao pedir ajuda.
 
 ## O que ela NÃO faz (leia antes de confiar)
 
@@ -166,9 +179,11 @@ padrão de [`tjro-jurisprudencia-mcp`](https://github.com/robertogecia/tjro-juri
 
 ## Ferramentas
 
-Mesmas quatro do servidor Python: `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`,
-`verificar_citacao_trf1`, `diagnostico_ritmo_trf1`. Descrições completas em
-[`server/index.js`](server/index.js).
+Mesmas oito do servidor Python: `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`,
+`verificar_citacao_trf1`, `diagnostico_ritmo_trf1` e, desde a v1.5.0, `buscar_recibos_trf1`
+(busca local, sem rede, nos recibos já gravados), `julgados_que_citam_trf1`, `linha_do_tempo_trf1`
+e `diagnostico_erros_trf1` (diário local de falhas, com `relatorio=true` para issue). Descrições
+completas em [`server/index.js`](server/index.js).
 
 ## Instalar o servidor Node (desenvolvimento / Claude Code)
 
@@ -176,7 +191,7 @@ Mesmas quatro do servidor Python: `buscar_jurisprudencia_trf1`, `obter_decisao_t
 git clone https://github.com/robertogecia/trf1-jurisprudencia-mcpb.git
 cd trf1-jurisprudencia-mcpb
 npm install
-npm test                      # 28 testes de paridade, sobre os mesmos fixtures do servidor Python
+npm test                      # 36 testes de paridade, sobre os mesmos fixtures do servidor Python
 node --check server/index.js
 ```
 
