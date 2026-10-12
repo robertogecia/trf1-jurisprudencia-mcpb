@@ -20,12 +20,21 @@ import {
   obterDecisao,
   verificarCitacao,
   diagnosticoRitmoTexto,
+  buscarRecibos,
+  diagnosticoErros,
+  julgadosQueCitam,
+  linhaDoTempo,
+  comDiario,
   comAvisos,
   iniciarChecagemVersao,
 } from "./lib.js";
 
 const server = new McpServer({ name: "Jurisprudência TRF1", version: VERSAO });
 iniciarChecagemVersao();
+
+// Diário local de erros (v1.5.0): anota exceção e resposta [PESQUISA NÃO REALIZADA/INCOMPLETA]; nunca quebra a ferramenta.
+const tool = (nome, fn) => comDiario(nome, async (a) => comAvisos(await fn(a)));
+const texto = (t) => ({ content: [{ type: "text", text: t }] });
 
 server.registerTool(
   "buscar_jurisprudencia_trf1",
@@ -87,7 +96,7 @@ server.registerTool(
         .describe("Só na base 'tnu': REPRESENTATIVO (Representativo de Controvérsia) e/ou RELEVANTE (Precedente Relevante)."),
     },
   },
-  async (a) => ({ content: [{ type: "text", text: await comAvisos(await buscar(a)) }] })
+  async (a) => texto(await tool("buscar_jurisprudencia_trf1", buscar)(a))
 );
 
 server.registerTool(
@@ -110,7 +119,7 @@ server.registerTool(
       base: z.enum(["trf1", "tnu", "colegiado"]).optional().describe("Padrão 'trf1' — a mesma em que o documento foi achado."),
     },
   },
-  async (a) => ({ content: [{ type: "text", text: await comAvisos(await obterDecisao(a.numero, a.base)) }] })
+  async (a) => texto(await tool("obter_decisao_trf1", (x) => obterDecisao(x.numero, x.base))(a))
 );
 
 server.registerTool(
@@ -136,7 +145,94 @@ server.registerTool(
       base: z.enum(["trf1", "tnu", "colegiado"]).optional().describe("Padrão 'trf1'."),
     },
   },
-  async (a) => ({ content: [{ type: "text", text: await comAvisos(await verificarCitacao(a.numero, a.trecho, a.base)) }] })
+  async (a) => texto(await tool("verificar_citacao_trf1", (x) => verificarCitacao(x.numero, x.trecho, x.base))(a))
+);
+
+server.registerTool(
+  "julgados_que_citam_trf1",
+  {
+    title: "Julgados que citam um precedente (TRF1/TNU)",
+    description:
+      "Julgados do portal do CJF que CITAM um julgado pelo número do processo (a ementa ou o dispositivo trazem o número). " +
+      "Serve para ver como o precedente foi tratado depois (aplicado, só mencionado, distinguido) e achar o que o cita. Busca o número " +
+      "no portal (1 consulta, 2 a 4 requisições), descarta os documentos do próprio processo e mostra o trecho em volta do número com um " +
+      "sinal lexical FRACO de afastamento. É leitura assistida: NÃO detecta superação, e o portal só indexa ementa e dispositivo — quem cita " +
+      "no voto sem repetir na ementa não aparece. Zero resultado não prova que ninguém aplicou o julgado.",
+    inputSchema: {
+      numero: z.string().describe("Número do processo citado (CNJ com ou sem máscara; mínimo de 15 dígitos)."),
+      base: z.enum(["trf1", "tnu", "colegiado"]).optional().describe("Padrão 'trf1'."),
+      limite: z.number().int().optional().describe("Máximo de julgados mostrados (padrão 10, teto 30)."),
+    },
+  },
+  async (a) => texto(await tool("julgados_que_citam_trf1", julgadosQueCitam)(a))
+);
+
+server.registerTool(
+  "linha_do_tempo_trf1",
+  {
+    title: "Linha do tempo de uma tese no TRF1",
+    description:
+      "O resultado declarado (provido, desprovido, acolhido, rejeitado…) dos acórdãos do TRF1/JEF1 sobre uma tese, ano a ano. " +
+      "Uma consulta por ano (3 a 4 requisições cada; no máximo 6 anos por chamada, padrão os últimos 5), com a contagem real de documentos do " +
+      "ano e o resultado lido do dispositivo, 1× por julgamento, nos 50 primeiros de cada ano (AMOSTRA). Mudança de proporção é sinal para ler os " +
+      "acórdãos do ano, nunca prova de superação. Só na base trf1 (o painel de datas não existe na TNU). Se o portal parar no meio, devolve os anos " +
+      "já feitos marcados como [PESQUISA INCOMPLETA].",
+    inputSchema: {
+      consulta: z.string().default("").describe("Termos na sintaxe do motor (ver buscar_jurisprudencia_trf1)."),
+      grupos: z.array(z.array(z.string())).optional().describe("Grupos de sinônimos (cada grupo é OU; os grupos se somam em E). Use o FATO julgado, não a conclusão esperada."),
+      orgao_julgador: z.string().optional().describe("Ex.: \"QUINTA TURMA\" — para ver como UM órgão decide ao longo dos anos."),
+      ano_inicio: z.number().int().optional().describe("Primeiro ano (padrão: ano_fim − 4)."),
+      ano_fim: z.number().int().optional().describe("Último ano (padrão: ano corrente)."),
+    },
+  },
+  async (a) => texto(await tool("linha_do_tempo_trf1", linhaDoTempo)(a))
+);
+
+server.registerTool(
+  "buscar_recibos_trf1",
+  {
+    title: "Buscar nos recibos locais (sem rede)",
+    description:
+      "Busca, SEM REDE, nos recibos que obter_decisao_trf1 já gravou nesta máquina (~/.trf1-jurisprudencia-recibos). " +
+      "Serve para reencontrar o que já foi lido (ementa, dispositivo e, na TNU, o inteiro teor) sem gastar requisição nem cota do portal: " +
+      "por palavras (`consulta`, todas devem aparecer), por sinônimos (`grupos`: cada grupo é OU, os grupos se somam em E; `$` no fim = radical), " +
+      "por processo (`nr_processo`, número ou início dele), por `id_documento`, por `relator` ou por `base` (\"trf1\", \"tnu\", \"colegiado\"). " +
+      "Ordena por relevância. NÃO é pesquisa no acervo do CJF: zero resultado aqui NUNCA é \"não localizado\" — para isso, buscar_jurisprudencia_trf1. " +
+      "Recibo editado à mão (sha256 não confere) é posto de lado e não aparece. Falha de parâmetro sai como \"BUSCA LOCAL NÃO REALIZADA\".",
+    inputSchema: {
+      consulta: z.string().default("").describe("Palavras que devem aparecer todas."),
+      grupos: z.array(z.array(z.string())).optional().describe("Grupos de sinônimos (OU dentro do grupo, E entre grupos); `$` no fim = radical."),
+      limite: z.number().int().optional().describe("Máximo de recibos mostrados (padrão 10, teto 30)."),
+      nr_processo: z.string().default("").describe("Número do processo (CNJ) ou o início dele, com ao menos 7 dígitos."),
+      id_documento: z.string().default("").describe("Id do documento."),
+      relator: z.string().default("").describe("Parte do nome do relator."),
+      base: z.string().default("").describe("\"trf1\", \"tnu\" ou \"colegiado\"."),
+    },
+  },
+  async (a) => {
+    let t;
+    try { t = buscarRecibos(a); } catch (e) { t = `BUSCA LOCAL NÃO REALIZADA — ${e.name}: ${e.message}`; }
+    return texto(await comAvisos(t));
+  }
+);
+
+server.registerTool(
+  "diagnostico_erros_trf1",
+  {
+    title: "Diário local de erros (TRF1/TNU)",
+    description:
+      "Resume o diário local de erros desta extensão (~/.trf1-jurisprudencia-erros.jsonl), sem consultar o portal. " +
+      "Toda falha de ferramenta (exceção, [PESQUISA NÃO REALIZADA/INCOMPLETA], bloqueio, timeout, rede) é anotada só com dado técnico: " +
+      "data, versão, ferramenta, tipo, HTTP, duração, estado do limitador e os PARÂMETROS descritos sem conteúdo (presença/tamanho) — " +
+      "nunca texto de busca, nome ou número de processo. Esta ferramenta agrupa por tipo, dá a causa provável, o que fazer e QUEM corrige. " +
+      "Com `relatorio=true` devolve o relatório técnico sanitizado, pronto para colar numa issue pública.",
+    inputSchema: {
+      dias: z.number().int().optional().describe("Janela do resumo (padrão 30)."),
+      limite: z.number().int().optional().describe("Máximo de padrões listados / linhas do relatório (padrão 15)."),
+      relatorio: z.boolean().optional().describe("true para o relatório técnico de issue."),
+    },
+  },
+  async (a) => texto(await comAvisos(diagnosticoErros(a)))
 );
 
 server.registerTool(

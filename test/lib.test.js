@@ -332,3 +332,172 @@ test("v1.2.1: 'sem razão' é operador de NEGAÇÃO (paridade com o Python)", ()
   const r = lib.conferir("VOTO Sem razão o apelante ao dizer que o benefício é devido desde o requerimento administrativo.", "o benefício é devido desde o requerimento", "TRF1", true);
   assert.ok(r.ok && r.alertas.some((a) => a.startsWith("NEGAÇÃO")), JSON.stringify(r.alertas));
 });
+
+// ============================================ v1.5.0 (paridade com o selftest "v1.5.0" do Python) ===
+const tnuIt = () => lib.textoDocumento(ler("12_tnu_inteiro_teor.html", "latin1"));
+
+test("v1.5.0: votação declarada (5 casos + monocrática + TNU pelo inteiro teor)", () => {
+  assert.equal(lib.votacaoDeclarada("Decide a Quinta Turma, por unanimidade, negar provimento às Apelações, nos termos do voto do Relator."), "unânime");
+  assert.equal(lib.votacaoDeclarada("Decide a Turma, por maioria, dar provimento, nos termos do voto divergente, vencido o relator."), "por maioria, voto divergente prevaleceu");
+  assert.equal(lib.votacaoDeclarada("Decide a Turma, por maioria, negar provimento, vencido o Juiz X, que dava provimento."), "por maioria");
+  assert.equal(lib.votacaoDeclarada("Por unanimidade, com declaração de voto do Juiz Y, negar provimento."), "unânime, com declaração de voto");
+  assert.equal(lib.votacaoDeclarada("Nega provimento."), "");
+  assert.equal(lib.votacaoDeclarada(""), "");
+  assert.equal(lib.votacaoDoDocumento({ tipo: "Decisão Monocrática", decisao: "por unanimidade" }), "");
+  assert.equal(lib.votacaoDoDocumento({ tipo: "Súmula", decisao: "por unanimidade" }), "");
+  assert.equal(lib.votacaoDoDocumento({ inteiro_teor_texto: tnuIt(), decisao: "", tipo: "Acórdão" }), "unânime");
+});
+
+test("v1.5.0: FATOS DO JULGADO — seção, relatório, vazio e regex de alegação", () => {
+  const it = tnuIt();
+  const lf = lib.linhaFatos({ inteiro_teor_texto: it, decisao: "", tipo: "Acórdão" });
+  assert.ok(lf.includes("FATOS DO JULGADO") && lf.includes("ementa › caso em exame") && lf.includes("PUIL contra acórdão"), lf);
+  const lf2 = lib.linhaFatos({ inteiro_teor_texto: it.replace("I. Caso em exame", "XX") });
+  assert.ok(lf2.includes("relatório do acórdão") && lf2.includes("NÃO o fundamento nem o resultado"), lf2);
+  assert.equal(lib.linhaFatos({ inteiro_teor_texto: "" }), "");
+  assert.equal(lib.fatosDoJulgado(""), null);
+  const re = lib.RE_ALEGACAO_FATOS;
+  assert.ok(re.test("o apelado sustenta que o prazo") && re.test("sustenta a autora que") && re.test("o INSS alega, em suas razões, que"));
+  assert.ok(re.test("o INSS alega, em suma") && !re.test("o tribunal fixou a tese"));
+});
+
+test("v1.5.0: trecho centrado traz o termo destacado para dentro da janela", () => {
+  const longo = "palavra ".repeat(200) + "«alvo» fim do texto";
+  const tc = lib.trechoCentrado(longo, 300);
+  assert.ok(tc.includes("«alvo»") && tc.startsWith("…") && tc.length <= 310, tc.slice(0, 80));
+  assert.equal(lib.trechoCentrado("pouco «alvo» texto", 300), "pouco «alvo» texto");
+  assert.equal(lib.trechoCentrado("sem destaque ".repeat(100), 300), lib.limpar("sem destaque ".repeat(100), 300));
+});
+
+test("v1.5.0: formatBusca e formatDecisao trazem votação, trecho centrado e fatos", () => {
+  const d = { id: "TNU1", base: "tnu", numero: "0011441-43.2015.4.03.6301", numero_digitos: "00114414320154036301", tipo: "Acórdão",
+    ementa: "palavra ".repeat(200) + "«alvo» fim", decisao: "A TNU decidiu, por unanimidade, negar provimento.", inteiro_teor_texto: tnuIt() };
+  const b = lib.formatBusca([d], 1, { consulta_montada: "x", base: "tnu", pagina: 1, por_pagina: 30 });
+  assert.ok(b.includes("  🗳️ Votação declarada no dispositivo: unânime (não diz quem foi o vencido; o voto vencido só se vê no inteiro teor)"), b);
+  assert.ok(b.indexOf("Citação:") < b.indexOf("🗳️") && b.includes("Ementa (trecho): …") && b.includes("«alvo»"));
+  const o = lib.formatDecisao([d], "x", 1);
+  assert.ok(o.includes("  🗳️ Votação declarada: unânime (não diz quem foi o vencido)") && o.includes("📌 FATOS DO JULGADO"), o.slice(0, 600));
+  assert.ok(o.indexOf("🗳️") < o.indexOf("📌"));
+});
+
+test("v1.5.0: buscar_recibos_trf1 — local, filtros, ordenação e recibo adulterado", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-rb-"));
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const d1 = { id: "TNU00033758", base: "tnu", numero: "0011441-43.2015.4.03.6301", numero_digitos: "00114414320154036301", tipo: "Acórdão",
+    relator: "FABIO DE SOUZA SILVA", orgao: "TURMA NACIONAL DE UNIFORMIZAÇÃO", data_julgamento: "14/05/2025",
+    ementa: "PUIL. incapacidade preexistente ao reingresso.", decisao: "A TNU decidiu, por unanimidade, negar provimento.", inteiro_teor_texto: tnuIt() };
+  const d2 = { id: "1174043", base: "trf1", numero: "0001369-17.2017.4.01.3606", numero_digitos: "00013691720174013606", tipo: "Acórdão",
+    relator: "CHARLES RENAUD", orgao: "QUINTA TURMA", data_julgamento: "10/03/2024", ementa: "Dano moral coletivo. Ação civil pública.",
+    decisao: "Decide a Quinta Turma, por maioria, negar provimento." };
+  assert.ok(lib.gravarRecibo(d1, env) && lib.gravarRecibo(d2, env));
+  const br = (a) => lib.buscarRecibos(a, env);
+  const r = br({ consulta: "incapacidade" });
+  assert.ok(r.includes("1 de 2") && r.includes("TNU00033758") && r.includes("ZERO requisição") && r.includes("🗳️ unânime"), r);
+  assert.ok(r.startsWith("**Recibos locais do TRF1/TNU — 1 de 2 documento(s) já lidos nesta máquina atendem a «incapacidade»"));
+  assert.ok(br({ grupos: [["dano moral", "dano material"], ["coletiv$"]] }).includes("1174043"));
+  assert.ok(!br({ consulta: "incapacidade" }).includes("1174043"));
+  assert.ok(br({ nr_processo: "0011441-43.2015" }).includes("TNU00033758"));
+  assert.ok(br({ nr_processo: "123" }).includes("BUSCA LOCAL NÃO REALIZADA"));
+  assert.ok(br({}).includes("BUSCA LOCAL NÃO REALIZADA"));
+  assert.ok(br({ id_documento: "../x" }).includes("id_documento inválido"));
+  assert.ok(br({ relator: "charles" }).includes("1174043") && !br({ relator: "charles" }).includes("TNU00033758"));
+  assert.ok(br({ consulta: "incapacidade", base: "tnu" }).includes("TNU00033758") && !br({ consulta: "incapacidade", base: "trf1" }).includes("TNU00033758"));
+  assert.ok(br({ consulta: "x", base: "zzz" }).includes("BUSCA LOCAL NÃO REALIZADA"));
+  assert.ok(br({ consulta: "palavrainexistente" }).includes("0 de 2"));
+  assert.ok(lib.buscarRecibos({ consulta: "dano moral", pasta: dir }, { TRF1_MCP_DIR_RECIBOS: "/nao/existe" }).includes("1174043"));
+  // recibo adulterado sai da busca
+  const p = lib.arqRecibo("1174043", env);
+  const j = JSON.parse(fs.readFileSync(p, "utf-8")); j.texto += " adulterado";
+  fs.writeFileSync(p, JSON.stringify(j));
+  assert.ok(!br({ grupos: [["dano moral"]] }).includes("1174043"));
+  assert.ok(!lib.buscarRecibos({ grupos: [["dano moral"]], pasta: dir }, env).includes("1174043"));
+});
+
+test("v1.5.0: diário de erros — privacidade, modo 0600, ritmo local ignorado, relatório", async (t) => {
+  const arqOrig = lib._arquivoEstadoAtual();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-err-"));
+  lib._setArquivoEstadoParaTeste(path.join(dir, "estado.json"));
+  t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); });
+  const env = { TRF1_MCP_ARQUIVO_ERROS: path.join(dir, "erros.jsonl") };
+  assert.equal(lib.tipoDoErroDiario("HTTP 503 do portal"), "http_503");
+  assert.equal(lib.tipoDoErroDiario("tempo esgotado"), "timeout");
+  assert.equal(lib.tipoDoErroDiario("disjuntor em pausa por mais 10 min"), "limite_de_ritmo");
+  assert.equal(lib.tipoDoErroDiario("Muitos Usuários"), "portal_congestionado");
+  const e = lib.registrarErro("buscar_jurisprudencia_trf1", {
+    texto: '[PESQUISA NÃO REALIZADA — HTTP 503 em 0011441-43.2015.4.03.6301 "dano moral coletivo"]',
+    args: { consulta: "dano moral secreto", grupos: [["a", "b"], ["c"]], relator: "Fulano de Tal", pagina: 2, tipo: ["ACORDAO"] }, ms: 1234 }, env);
+  const js = JSON.stringify(e);
+  assert.ok(e && !js.includes("secreto") && !js.includes("Fulano") && !js.includes("0011441"), js);
+  assert.equal(e.args.pagina, 2);
+  assert.deepEqual(e.args.tipo, ["ACORDAO"]);
+  assert.equal(e.args.grupos, "2 grupo(s), 3 termo(s)");
+  assert.equal(e.tipo, "http_503");
+  assert.equal(e.versao, `node-${lib.VERSAO}`);
+  assert.equal((fs.statSync(env.TRF1_MCP_ARQUIVO_ERROS).mode & 0o777).toString(8), "600");
+  assert.ok(!fs.readFileSync(env.TRF1_MCP_ARQUIVO_ERROS, "utf-8").match(/secreto|Fulano|0011441/));
+  const ent = lib.lerErros(30, env);
+  assert.equal(ent.length, 1);
+  assert.ok(lib.resumirErros(ent, 15, env).includes("http_503"));
+  const rel = lib.relatorioErros(ent);
+  assert.ok(rel.includes("Relatório técnico") && rel.includes("issues/new") && rel.includes('"pagina": 2'), rel);
+  assert.ok(lib.resumirErros([]).includes("Nenhum erro"));
+  assert.ok(lib.diagnosticoErros({ relatorio: true }, env).includes("Relatório técnico"));
+  // o wrapper anota resposta de falha, ignora ritmo local e não quebra a ferramenta
+  await lib.comDiario("obter_decisao_trf1", async () => "[PESQUISA NÃO REALIZADA — HTTP 502]", env)({});
+  await lib.comDiario("obter_decisao_trf1", async () => "[PESQUISA NÃO REALIZADA — disjuntor em pausa]", env)({});
+  await lib.comDiario("obter_decisao_trf1", async () => "tudo certo", env)({});
+  assert.equal(lib.lerErros(30, env).length, 2);
+  await assert.rejects(lib.comDiario("obter_decisao_trf1", async () => { throw new Error("boom"); }, env)({}), /boom/);
+  assert.equal(lib.lerErros(30, env).length, 3);
+  // arquivo de erros ilegível/ausente não quebra a anotação
+  assert.equal(lib.registrarErro("x", { texto: "y" }, { TRF1_MCP_ARQUIVO_ERROS: "/nao/existe/erros.jsonl" }), null);
+  assert.ok(lib.carimboNaoRealizada("HTTP 500 no portal").includes("diagnostico_erros_trf1` com relatorio=true"));
+  assert.ok(!lib.carimboNaoRealizada("disjuntor em pausa").includes("diagnostico_erros_trf1"));
+});
+
+test("v1.5.0: julgados que citam / linha do tempo (parte sem rede)", async () => {
+  assert.ok(lib.sinalAfastamento("o caso é distinto: hipótese diversa da do precedente") && !lib.sinalAfastamento("aplica-se o precedente ao caso"));
+  const jan = lib.janelasDestacadas({ ementa: "a ".repeat(200) + "conforme «0011441-43.2015.4.03.6301» firmou a tese", decisao: "" });
+  assert.ok(jan.length === 1 && jan[0].includes("«0011441-43.2015.4.03.6301»") && jan[0].length < 700, JSON.stringify(jan));
+  assert.deepEqual(lib.janelasDestacadas({ ementa: "sem destaque", decisao: "" }), []);
+  const lt = lib.formatarLinhaDoTempo([{ ano: 2023, total: 120, julgamentos: 40, res: [["provido", 25], ["desprovido", 15]] }], "x · 2023–2023");
+  assert.ok(lt.includes("| 2023 | 120 | 40 | 25 provido, 15 desprovido |") && lt.includes("nunca prova de superação") && !lt.startsWith("[PESQUISA"));
+  assert.ok(lib.formatarLinhaDoTempo([{ ano: 2023, total: 1, julgamentos: 1, res: [] }], "x", "parou em 2024").startsWith("[PESQUISA INCOMPLETA — parou em 2024]"));
+  const falha = () => { throw new Error("sem rede: não deveria chegar aqui"); };
+  assert.ok((await lib.linhaDoTempo({}, falha)).includes("Erro de parâmetro"));
+  assert.ok((await lib.linhaDoTempo({ consulta: "tese", ano_inicio: 2010, ano_fim: 2020 }, falha)).includes("Erro de parâmetro"));
+  assert.ok((await lib.julgadosQueCitam({ numero: "123", base: "trf1", limite: 5 }, falha)).includes("Erro de parâmetro"));
+  assert.ok((await lib.julgadosQueCitam({ numero: "0011441-43.2015.4.03.6301", base: "zzz" }, falha)).includes("Erro de parâmetro"));
+});
+
+test("v1.5.0 red team 12/10/2026: regressões (votação, sanitização, args, recibos, fatos, diário)", async (t) => {
+  assert.equal(lib.votacaoDeclarada("Decide a Turma, por unanimidade, negar provimento, nos termos do precedente julgado por maioria (AC 1234)."), "unânime");
+  assert.equal(lib.votacaoDeclarada("A Turma, por unanimidade, deu provimento, considerando vencido o prazo prescricional."), "unânime");
+  assert.equal(lib.votacaoDeclarada("Decide a Turma, por maioria, negar provimento, vencido o Des. Fulano."), "por maioria");
+  const s = lib.sanitizar("relator 'João da Silva' consulta «Fulano de Tal» proc 2009.34.00.012345-6 e 12345-67.2019.4.01.3400 e 1234567 url https://x.br/a;jsessionid=ABC?q=1 a@b.com");
+  for (const v of ["João", "Fulano", "2009.34", "12345-67", "1234567", "jsessionid", "a@b.com"]) assert.ok(!s.includes(v), `${v}: ${s}`);
+  assert.deepEqual(lib.descreverArgs({ fonte: "Fulano", base: "trf1 João", tipo: ["Maria Souza"], pagina: 2, tipo_data: "julgamento" }),
+    { fonte: "<valor fora da lista>", base: "<valor fora da lista>", tipo: ["<valor fora da lista>"], pagina: 2, tipo_data: "julgamento" });
+  const a0 = Date.now(); lib.sanitizar('"' + "a".repeat(400000)); lib.sanitizar("a.".repeat(400000) + "@");
+  assert.ok(Date.now() - a0 < 2000, "sanitizar lento");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-rt-"));
+  // diário: só o motivo entre colchetes
+  const arqOrig = lib._arquivoEstadoAtual();
+  lib._setArquivoEstadoParaTeste(path.join(dir, "estado.json"));
+  t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); });
+  const env = { TRF1_MCP_ARQUIVO_ERROS: path.join(dir, "e.jsonl") };
+  await lib.comDiario("linha_do_tempo_trf1", async () => "[PESQUISA INCOMPLETA — parou em 2022 (HTTP 503)]\n**Linha do tempo no TRF1** (Maria Souza aposentadoria · 2021–2023 · órgão: Gab. Des. Fulano)", env)({});
+  const txt = fs.readFileSync(env.TRF1_MCP_ARQUIVO_ERROS, "utf-8");
+  assert.ok(!txt.includes("Maria") && !txt.includes("Fulano") && txt.includes("HTTP 503"), txt);
+  // recibos: campo não-string e termo só com $
+  const rd = path.join(dir, "rec"); fs.mkdirSync(rd);
+  const texto = "aposentadoria especial do segurado";
+  fs.writeFileSync(path.join(rd, "9.json"), JSON.stringify({ id_documento: "9", texto, sha256: crypto.createHash("sha256").update(texto).digest("hex"), data_julgamento: 20200101, base: "trf1" }));
+  assert.ok(lib.buscarRecibos({ consulta: "aposentadoria", pasta: rd }).includes("9"));
+  assert.ok(lib.buscarRecibos({ consulta: "$", pasta: rd }).includes("BUSCA LOCAL NÃO REALIZADA"));
+  assert.ok(lib.buscarRecibos({ grupos: [["$", "*"]], pasta: rd }).includes("BUSCA LOCAL NÃO REALIZADA"));
+  // fatos
+  const f1 = lib.fatosDoJulgado("RELATÓRIO\nPUIL interposto contra acórdão que reformou a sentença. É o relatório.\nVoto\nNego provimento ao recurso por unanimidade, pois a tese não procede.\n");
+  assert.ok(f1 && !f1[1].includes("Nego"));
+  assert.equal(lib.fatosDoJulgado("RELATÓRIO\nRelatório dispensado (art. 38 da Lei 9.099/95), conforme a regra do rito sumaríssimo.\nVOTO\nNego provimento.\n"), null);
+});

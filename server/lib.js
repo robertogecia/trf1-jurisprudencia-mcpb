@@ -13,9 +13,9 @@ import os from "node:os";
 import path from "node:path";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
-import { posicaoTnu } from "./posicao2.js";
+import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.4.1";
+export const VERSAO = "1.5.0";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -110,6 +110,23 @@ export function limpar(texto, limite = 0) {
     t = (i > 0 ? cortado.slice(0, i) : cortado) + "…";
   }
   return t;
+}
+/** _trecho_centrado: trecho de até `limite` caracteres que MOSTRA o primeiro termo destacado («…») do portal (v1.5.0). */
+export function trechoCentrado(bruto, limite = 800) {
+  const t = limpar(bruto, 0);
+  const i = t.indexOf("«");
+  if (i < 0 || i + 40 <= limite) return limpar(bruto, limite);
+  let ini = Math.max(0, i - 200);
+  const esp = t.indexOf(" ", ini);
+  ini = ini && esp >= 0 && esp < i ? esp + 1 : ini;
+  const cauda = t.slice(ini);
+  let corte = cauda;
+  if (cauda.length > limite) {
+    const c = cauda.slice(0, limite);
+    const k = c.lastIndexOf(" ");
+    corte = (k >= 0 ? c.slice(0, k) : c) + "…";
+  }
+  return "…" + corte;
 }
 export const semDestaque = (t) => (t || "").replaceAll("«", "").replaceAll("»", "");
 
@@ -356,24 +373,21 @@ const ROTULOS_RESULTADO = { PROVIDO: "provido", DESPROVIDO: "desprovido", ACOLHI
   REJEITADO: "rejeitado", PREJUDICADO: "prejudicado", "NÃO CONHECIDO": "não conhecido" };
 
 export function resumoResultadosPagina(docs) {
+  // paridade com _resumo_resultados_pagina do Python: sem nº+data a chave é a posição; julgamento sem resultado entra em "sem resultado"
   const porJulgamento = new Map();
-  docs.forEach((d) => {
-    const chave = `${d.numero_digitos}|${d.data_julgamento}`;
-    const conj = resultadoDe(d.decisao || "");
-    if (!conj.size) return;
+  docs.forEach((d, i) => {
+    const chave = d.numero_digitos && d.data_julgamento ? `${d.numero_digitos}|${d.data_julgamento}` : `#${i}`;
     if (!porJulgamento.has(chave)) porJulgamento.set(chave, new Set());
-    for (const c of conj) porJulgamento.get(chave).add(c);
+    for (const c of resultadoDe(d.decisao || "")) porJulgamento.get(chave).add(c);
   });
   const contagem = Object.fromEntries(Object.keys(ROTULOS_RESULTADO).map((k) => [k, 0]));
   let semResultado = 0;
   for (const conj of porJulgamento.values()) {
-    let algum = false;
-    for (const [a, b] of OPOSTOS) {
-      const lado = ladoDe(conj, [a, b]);
-      if (lado) { contagem[lado]++; algum = true; }
-    }
-    for (const k of ["PREJUDICADO", "NÃO CONHECIDO"]) if (conj.has(k)) { contagem[k]++; algum = true; }
-    if (!algum) semResultado++;
+    const lados = OPOSTOS.map((par) => ladoDe(conj, par)).filter(Boolean);
+    if (lados.length === 1) contagem[lados[0]]++;
+    else if (!lados.length && conj.has("PREJUDICADO")) contagem["PREJUDICADO"]++;
+    else if (!lados.length && conj.has("NÃO CONHECIDO")) contagem["NÃO CONHECIDO"]++;
+    else semResultado++;
   }
   return { contagem, sem_resultado: semResultado, total_julgamentos: porJulgamento.size };
 }
@@ -629,6 +643,96 @@ export function aplicarFecho(d) {
   return avisos;
 }
 
+
+// --- Votação declarada e FATOS DO JULGADO (porte do TJRO v1.20–v1.26; TRF1 v1.5.0) ----
+const RE_VENCIDO = /\bVENCID[OA]S?\b/;
+const RE_DIVERGENTE_PREV = /VOTO(?:-VISTA)? DIVERGENTE|\bDIVERG[EÊ]NCIA\b|LAVRAR[AÁ] O ACORDAO|VENCID[OA]S? (?:A|O|AS|OS) RELATOR|NOS TERMOS DO VOTO DIVERGENTE/;
+
+/** _votacao_declarada: "unânime", "por maioria", "por maioria, voto divergente prevaleceu", e/ou "com declaração de voto"; "" se não reconhece. */
+export function votacaoDeclarada(texto) {
+  if (!texto) return "";
+  const p = fold(limpar(texto, 0).replace(/\s+/g, " ")).slice(0, 1500).toUpperCase();
+  let v;
+  const mp = /\b(?:DECIDE|DECIDIU|DECIDEM|ACORDA|ACORDAM|DECIDIRAM)\b[^.]{0,80}?\b(UNANIMIDADE|MAIORIA|UNANIME|UNANIMEMENTE)\b|\bPOR (UNANIMIDADE|MAIORIA)\b/.exec(p);
+  const nucleo = mp ? (mp[1] || mp[2]) : "";   // a palavra da PROCLAMAÇÃO manda
+  const maioria = nucleo
+    ? nucleo === "MAIORIA" || /\bVENCID[OA]S?\s+(?:O|A|OS|AS)\s+(?:DES|DESEMBARGADOR|JUIZ|MIN|RELATOR|EXMO)/.test(p)
+    : /\bMAIORIA\b/.test(p) || RE_VENCIDO.test(p);
+  if (maioria) {
+    v = RE_DIVERGENTE_PREV.test(p) && !/VENCIDO[^.]{0,40}DIVERGENTE/.test(p) ? "por maioria, voto divergente prevaleceu" : "por maioria";
+  } else if (/UNANIMIDADE|\bUNANIME\b|\bUNANIMEMENTE\b/.test(p)) {
+    v = "unânime";
+  } else {
+    return "";
+  }
+  if (/DECLARA[CÇ][AÃ]O DE VOTO/.test(p)) v += ", com declaração de voto";
+  return v;
+}
+
+/** _votacao_do_documento: do "Decisão" e, na TNU, do ACÓRDÃO/ata do inteiro teor quando o dispositivo não a diz. */
+export function votacaoDoDocumento(d) {
+  const tipo = fold(d.tipo || "");
+  if (tipo.includes("monocrat") || tipo.includes("presid") || tipo === "sumula" || tipo.startsWith("arguicao")) return "";
+  let v = votacaoDeclarada(d.decisao || "");
+  const it = d.inteiro_teor_texto || "";
+  if (!v && it) {
+    const m = [...it.matchAll(/turma nacional de uniformiza[çc][ãa]o\s+decidiu[^.]{0,200}/gi)];
+    v = m.length ? votacaoDeclarada(m[m.length - 1][0]) : "";
+  }
+  const rt = d.relator_texto || "", ra = d.relator_acordao_texto || "";
+  if (it && v === "por maioria" && ra && rt && norm(ra) !== norm(rt) && !norm(rt).includes(norm(ra)) && !norm(ra).includes(norm(rt))) {
+    v = "por maioria, voto divergente prevaleceu";
+  }
+  return v;
+}
+
+export const FATOS_MAX = 1200;
+const RE_LIXO_WORD = /^\s*(?:\d+(?:\.\d+)?\s+\d+x\d+\s+)?(?:Normal\s+)?(?:\d+\s+){0,3}(?:(?:false|true)\s+){1,3}(?:[A-Z]{2}-[A-Z]{2}\s+|X-NONE\s+){1,3}(?:MicrosoftInternetExplorer\d\s+)?/;
+// \w/\W/\b do Python são Unicode; aqui ficam explícitos com \p{L}\p{N}_ (flag u)
+const W = "[\\p{L}\\p{N}_]", NW = "[^\\p{L}\\p{N}_]";
+const PARTES_FATOS = "(?:agravante|agravad[oa]s?|apelante|apelad[oa]s?|recorrente|recorrid[oa]s?|embargante|embargad[oa]s?|autor(?:a|es|as)?|r[ée]u|" +
+  "requerente|requerid[oa]s?|parte|banco|impetrante|exequente|executad[oa]s?|INSS|Instituto|Uni[ãa]o|Fazenda|Caixa|requerente|suscitante)";
+const VERBOS_FATOS = `(?:sustent|alega|aleg[oó]u|alegava|aduz|afirm|argument|narra|defende|insurg|pretende|postula|requer)${W}*`;
+export const RE_ALEGACAO_FATOS = new RegExp(
+  `(?<!${W})(?:${PARTES_FATOS}${NW}+(?:${W}+${NW}+){0,2}?${VERBOS_FATOS}|${VERBOS_FATOS}${NW}+(?:(?:a|o|as|os|que)${NW}+)?${PARTES_FATOS}` +
+  "|(?:alegava|alegando|sustentando|afirmando|argumentando|aduzindo|alega[çc][ãa]o))", "iu");
+
+const stripChars = (t, cs) => { let a = 0, b = t.length; while (a < b && cs.includes(t[a])) a++; while (b > a && cs.includes(t[b - 1])) b--; return t.slice(a, b); };
+
+/** _fatos_do_julgado: trecho LITERAL em que o julgado resume os fatos (TNU). Devolve [onde, texto] ou null. */
+export function fatosDoJulgado(it) {
+  if (!it) return null;
+  for (const sec of secoesDaEmenta(it, 0, it.length)) {
+    if (sec.nome === "caso em exame") {
+      const ini = sec.a;
+      const m = /^\s*(?:[IVXivx]{1,3}\s*[.)-]?\s*)?[Cc][Aa][Ss][Oo] [Ee][Mm] [Ee][Xx][Aa][Mm][Ee]\s*[.:]?\s*/.exec(it.slice(ini, sec.b));
+      const txt = it.slice(ini + (m ? m[0].length : 0), sec.b).trim();
+      if (txt.length > 40) return ["ementa › caso em exame", txt.slice(0, FATOS_MAX)];
+    }
+  }
+  const mr = /(?:(?<=\n)|(?<![\s\S]))[ \t]*RELAT[ÓO]RIO[ \t]*(?=\n|(?![\s\S]))/.exec(it.slice(0, 6000));
+  if (mr) {
+    const fimR = mr.index + mr[0].length;
+    const reVoto = /(?:(?:(?<=\n)|(?<![\s\S]))[ \t]*VOTO\b[^\n]*(?=\n|(?![\s\S])))|\b[ÉEé]\s+o\s+(?:breve\s+)?relat[óo]rio\b/gi;
+    reVoto.lastIndex = fimR;
+    const mv = reVoto.exec(it);
+    const fim = mv ? mv.index : Math.min(it.length, fimR + FATOS_MAX);
+    const txt = stripChars(it.slice(fimR, fim), " \t\n:.-").replace(RE_LIXO_WORD, "").trim();
+    if (txt.length > 40 && !/relat[óo]rio\s+(?:formal\s+)?dispensad[oa]|dispensad[oa]\s+o\s+relat[óo]rio|dispens[ao]\s+o\s+relat[óo]rio/i.test(txt.slice(0, 200))) return ["relatório do acórdão", txt.slice(0, FATOS_MAX)];
+  }
+  return null;
+}
+
+export function linhaFatos(d) {
+  const f = fatosDoJulgado(d.inteiro_teor_texto || "");
+  if (!f) return "";
+  const ft = f[1].replace(/\s+/g, " ") + (f[1].length >= FATOS_MAX ? " […]" : "");
+  let aviso = "";
+  if (f[0].startsWith("relatório")) aviso = " ⚠️ É o relatório: narra o pedido e as alegações das partes, NÃO o fundamento nem o resultado; confira os dois no voto e no fecho.";
+  else if (RE_ALEGACAO_FATOS.test(f[1])) aviso = " ⚠️ O trecho contém alegação da parte (sustentou/alega/afirma): é o que a parte diz, não fato reconhecido pelo julgado; não o transforme em fato na ficha.";
+  return `📌 FATOS DO JULGADO (trecho literal, ${f[0]}; não é resumo meu): "${ft}"${aviso}`;
+}
+
 // --------------------------------------------------------------------- sinais do julgado ---
 const RE_ANCORAS = [
   [/s[úu]mula\s+vinculante\s+n?[º°.]*\s*(\d{1,4})/gi, (n) => `Súmula Vinculante ${n}`],
@@ -865,11 +969,13 @@ export function formatBusca(docs, total, meta) {
     if (d.fonte_publicacao) metaL.push(`Fonte: ${d.fonte_publicacao}`);
     linhas.push("  " + metaL.join(" · "));
     linhas.push(`  Citação: ${citacaoComLink(d)} — verificação: ${nivelVerificacao(d)}`);
+    const vot = votacaoDoDocumento(d);
+    if (vot) linhas.push(`  🗳️ Votação declarada no dispositivo: ${vot} (não diz quem foi o vencido; o voto vencido só se vê no inteiro teor)`);
     for (const sl of linhasDeSinais(d)) linhas.push(`  ${sl}`);
     const em = d.ementa || "";
     if (em.length > TRECHO_EMENTA) houveCorte = true;
-    linhas.push(`  Ementa (trecho): ${limpar(em, TRECHO_EMENTA) || "—"}`);
-    if (d.decisao) linhas.push(`  Dispositivo: ${limpar(d.decisao, TRECHO_DECISAO)}`);
+    linhas.push(`  Ementa (trecho): ${trechoCentrado(em, TRECHO_EMENTA) || "—"}`);
+    if (d.decisao) linhas.push(`  Dispositivo: ${trechoCentrado(d.decisao, TRECHO_DECISAO)}`);
     const irmaos = porNumero.get(d.numero_digitos) || [];
     if (irmaos.length > 1 && irmaos[0] === d) {
       const desc = irmaos.map((x) => `${x.data_julgamento || "?"} ${x.tipo || ""} (id ${x.id}, Rel. ${x.relator || "?"})`).join("; ");
@@ -927,7 +1033,11 @@ export function formatDecisao(docs, numero, total) {
     const extras = Object.entries(d.campos || {}).filter(([k]) => !["Ementa", "Decisão", "Inteiro teor", "Número", "Fonte da publicação"].includes(k));
     if (extras.length) linhas.push("  " + extras.map(([k, v]) => `${k}: ${v}`).join(" · "));
     if (d.fonte_publicacao) linhas.push(`  Fonte da publicação: ${d.fonte_publicacao}`);
+    const vot = votacaoDoDocumento(d);
+    if (vot) linhas.push(`  🗳️ Votação declarada: ${vot} (não diz quem foi o vencido)`);
     for (const sl of linhasDeSinais(d)) linhas.push(`  ${sl}`);
+    const lf = linhaFatos(d);
+    if (lf) linhas.push(`  ${lf}`);
     if (em.length > orcamentoPorDoc) {
       const cortadoTxt = em.slice(0, orcamentoPorDoc);
       const i = cortadoTxt.lastIndexOf(" ");
@@ -1510,7 +1620,8 @@ export function carimboNaoRealizada(motivo) {
   const m = String(motivo).trim().replace(/\.$/, "");
   let ajuda = "";
   if (!/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed/.test(m)) {
-    ajuda = `\nSe persistir, relate: ${linkRelato(tipoDoErro(m))}`;
+    ajuda = `\nSe persistir, relate: ${linkRelato(tipoDoErro(m))}` +
+      "\n`diagnostico_erros_trf1` com relatorio=true gera o relatório técnico já sanitizado para colar na issue.";
   }
   return `[PESQUISA NÃO REALIZADA — ${m}]\nIsto NÃO é "não localizado": a consulta não chegou a ser feita ou não foi respondida. Registre a frente como pendente; use diagnostico_ritmo_trf1 antes de concluir que o portal está fora.${ajuda}`;
 }
@@ -1681,6 +1792,468 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
 }
 
 export function diagnosticoRitmoTexto() { return diagnosticoRitmo(); }
+
+// ------------------------------------------------- busca nos recibos locais (0 requisição) ---
+// Porte do buscar_recibos_tjro / _buscar_recibos do servidor Python (v1.5.0).
+export const RECIBOS_LIMITE_MAX = 30, RECIBOS_GRUPOS_MAX = 6, RECIBOS_TERMOS_POR_GRUPO_MAX = 12;
+const STOP_RECIBOS = new Set(["a", "o", "e", "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas", "por", "para", "com", "um", "uma", "que", "se", "ao", "aos"]);
+
+/** _regex_termo: `$`/`*` no fim = radical; frase com espaço = palavras vizinhas, em ordem. */
+export function regexTermo(t) {
+  const s = norm(String(t || "")).trim();
+  const radical = s.endsWith("$") || s.endsWith("*");
+  const partes = s.split(/[^a-z0-9]+/).filter(Boolean);
+  if (!partes.length) return null;
+  return new RegExp("(?<![a-z0-9])" + partes.join("[^a-z0-9]+") + (radical ? "" : "(?![a-z0-9])"));
+}
+const contarRe = (rx, tn) => (tn.match(new RegExp(rx.source, "g")) || []).length;
+
+export function listarRecibos(pasta = null, env = process.env) {
+  const dirPadrao = DIR_RECIBOS(env);
+  const dir = pasta || dirPadrao;
+  let nomes;
+  try { nomes = fs.readdirSync(dir).sort(); } catch { return []; }
+  const out = [];
+  for (const nome of nomes) {
+    if (!nome.endsWith(".json")) continue;
+    let rec = null;
+    if (dir === dirPadrao) rec = lerRecibo(nome.slice(0, -5), env);
+    else {
+      try {
+        const r = JSON.parse(fs.readFileSync(path.join(dir, nome), "utf-8"));
+        if (r && typeof r === "object" && typeof r.texto === "string" &&
+          crypto.createHash("sha256").update(r.texto, "utf-8").digest("hex") === r.sha256) rec = r;
+      } catch { rec = null; }
+    }
+    if (rec && rec.id_documento) {
+      const c = { ...rec };
+      for (const campo of ["id_documento", "nr_processo", "numero", "base", "tipo", "classe", "orgao", "orgao_fonte", "relator", "relator_texto",
+        "data_julgamento", "obtido_em", "inteiro_teor", "ementa", "dispositivo"]) {
+        const v = c[campo];
+        c[campo] = typeof v === "string" ? v : v === null || v === undefined ? "" : String(v);
+      }
+      c._tn = norm(c.inteiro_teor || c.texto);
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+export function trechoEmVolta(texto, tn, rx, largura = 160) {
+  if (!rx) return "";
+  const m = rx.exec(tn);
+  if (!m) return "";
+  const i = tn.length === texto.length ? m.index : Math.max(0, Math.trunc(m.index * texto.length / Math.max(1, tn.length)));
+  return texto.slice(Math.max(0, i - largura), i + largura).replace(/\s+/g, " ").trim();
+}
+
+export function buscarRecibos(a = {}, env = process.env) {
+  const { consulta, grupos, limite = 10, pasta = null, nr_processo: nrProcesso = "", id_documento: idDocumento = "", relator = "", base = "" } = a;
+  const palavras = norm(String(consulta || "")).split(/[^a-z0-9*$]+/).filter((p) => p && p.replace(/[*$]+$/, "") && !STOP_RECIBOS.has(p.replace(/[*$]+$/, "")));
+  const gs = [];
+  if (Array.isArray(grupos)) {
+    for (const g of grupos.filter((g) => Array.isArray(g) && g.length).slice(0, RECIBOS_GRUPOS_MAX)) {
+      const termos = g.map((x) => String(x || "").trim()).filter((t) => t && /[A-Za-z0-9À-ÿ]/.test(t)).slice(0, RECIBOS_TERMOS_POR_GRUPO_MAX);
+      if (termos.length) gs.push(termos);
+    }
+  }
+  const dig = soDigitos(String(nrProcesso || ""));
+  const idDoc = String(idDocumento || "").trim();
+  if (idDoc && !/^[A-Za-z0-9]{1,40}$/.test(idDoc)) return `BUSCA LOCAL NÃO REALIZADA — id_documento inválido (recebi «${idDoc.slice(0, 40)}»).`;
+  if (String(nrProcesso || "").trim() && dig.length < 7) return "BUSCA LOCAL NÃO REALIZADA — nr_processo precisa de pelo menos 7 dígitos (número CNJ, com ou sem máscara, ou o início dele).";
+  const relN = norm(String(relator || "")).replace(/[^a-z0-9]+/g, " ").trim();
+  const b = String(base || "").trim().toLowerCase();
+  if (b && !(b in BASES)) return `BUSCA LOCAL NÃO REALIZADA — base deve ser uma de ${Object.keys(BASES).join(", ")}.`;
+  if (!palavras.length && !gs.length && !dig && !idDoc && !relN) {
+    return "BUSCA LOCAL NÃO REALIZADA — informe `consulta` (palavras), `grupos` (sinônimos), `nr_processo`, `id_documento` ou `relator`.";
+  }
+  let lim = Number.parseInt(limite, 10);
+  if (!Number.isFinite(lim)) lim = 0;
+  lim = Math.max(1, Math.min(lim || 10, RECIBOS_LIMITE_MAX));
+  let todos = listarRecibos(pasta, env);
+  const totalGeral = todos.length;
+  if (b) todos = todos.filter((r) => (r.base || "trf1") === b);
+  if (idDoc) todos = todos.filter((r) => String(r.id_documento) === idDoc);
+  if (dig) todos = todos.filter((r) => { const nd = soDigitos(String(r.nr_processo || "")); return Boolean(nd) && (nd === dig || (dig.length < 20 && nd.startsWith(dig))); });
+  if (relN) todos = todos.filter((r) => norm(`${r.relator || ""} ${r.relator_texto || ""}`).replace(/[^a-z0-9]+/g, " ").includes(relN));
+  const resP = palavras.map(regexTermo).filter(Boolean);
+  const resG = gs.map((grp) => grp.map(regexTermo).filter(Boolean)).filter((g) => g.length);
+  let achados = [];
+  for (const r of todos) {
+    const tn = r._tn;
+    if (!resP.every((p) => p.test(tn))) continue;
+    if (!resG.every((g) => g.some((p) => p.test(tn)))) continue;
+    const soma = resP.reduce((s, p) => s + contarRe(p, tn), 0) + resG.flat().reduce((s, p) => s + contarRe(p, tn), 0);
+    achados.push([soma / Math.log(tn.length + 10), dataIso(r.data_julgamento || ""), r]);
+  }
+  achados.sort((x, y) => (x[1] < y[1] ? 1 : x[1] > y[1] ? -1 : 0));
+  achados.sort((x, y) => y[0] - x[0]);
+  const filtroTxt = [
+    dig ? `processo ${dig.length === 20 ? cnj(dig) : dig + "…"}` : "", idDoc ? `id ${idDoc}` : "",
+    relN ? `relator «${String(relator).trim()}»` : "", b ? `base ${b}` : ""].filter(Boolean).join(", ");
+  const termosMostrados = [...palavras, ...gs.flat()].join(", ") || "(sem termos)";
+  const linhas = [
+    `**Recibos locais do TRF1/TNU — ${achados.length} de ${totalGeral} documento(s) já lidos nesta máquina atendem a «${termosMostrados}»` +
+      `${filtroTxt ? " em " + filtroTxt : ""} · ZERO requisição ao portal**`,
+    "⚠️ Isto NÃO é pesquisa no acervo do CJF: só olha o que obter_decisao_trf1 já trouxe para esta máquina. Zero aqui NUNCA é " +
+      "\"não localizado\" — para isso, buscar_jurisprudencia_trf1. Recibo da base trf1 guarda ementa e dispositivo (sem voto); o inteiro teor só existe nos da TNU.",
+    "",
+  ];
+  if (!todos.length) linhas.push(`_(nenhum recibo em ${pasta || DIR_RECIBOS(env)})_`);
+  achados.slice(0, lim).forEach(([, , r], i) => {
+    const vot = votacaoDoDocumento(docDeRecibo(r, env));
+    linhas.push(
+      `${i + 1}. ${r.tipo || "?"}${r.classe ? " " + r.classe : ""} · ${r.orgao || "órgão não registrado"} (${r.orgao_fonte || "?"}) ` +
+      `· julgado em ${r.data_julgamento || "?"} · Rel. ${r.relator_texto || r.relator || "—"} · ${r.numero || cnj(r.nr_processo || "")} ` +
+      `· id ${r.id_documento} · base ${r.base || "trf1"}` + (vot ? ` · 🗳️ ${vot}` : ""));
+    const pat = resP.length ? resP[0] : resG.length ? resG[0][0] : null;
+    const tre = trechoEmVolta(r.inteiro_teor || r.texto, r._tn, pat);
+    if (tre) linhas.push(`   «…${tre}…»`);
+    const cust = r.inteiro_teor_incluido ? "inteiro teor da TNU incluído" : "só ementa/dispositivo (sem voto)";
+    linhas.push(`   recibo lido do portal em ${String(r.obtido_em || "?").slice(0, 16).replace("T", " ")} · ${cust}`);
+  });
+  if (achados.length > lim) linhas.push(`\n_(mais ${achados.length - lim} recibo(s) atendem; aumente \`limite\` até ${RECIBOS_LIMITE_MAX} ou refine os termos)_`);
+  linhas.push("\nPara conferir uma frase antes das aspas: verificar_citacao_trf1(numero, trecho) — usa o recibo, 0 requisições. " +
+    "Para a ementa e o dispositivo integrais: obter_decisao_trf1(numero).");
+  return linhas.join("\n");
+}
+
+// ------------------------------------------------------------ diário local de erros ---
+// Só dado técnico: NUNCA texto de busca, grupos, nome de relator/parte nem número de processo. O registro jamais quebra uma ferramenta.
+export const ARQUIVO_ERROS = (env = process.env) => env.TRF1_MCP_ARQUIVO_ERROS || path.join(os.homedir(), ".trf1-jurisprudencia-erros.jsonl");
+const MAX_LINHAS_ERROS = 500, MAX_BYTES_ERROS = 400_000;
+const VALORES_SEGUROS = new Set(["tipo", "tipo_acordao", "fonte", "base", "tipo_data", "pagina", "por_pagina", "limite", "dias"]);
+const LISTA_BRANCA = { tipo: new Set(["ACORDAO", "SUMULA", "ARGUICAO", "DECISAOMONO", "DECISAOPRES"]), tipo_acordao: new Set(["REPRESENTATIVO", "RELEVANTE"]),
+  fonte: new Set(["TRF1", "JEF1"]), base: new Set(["trf1", "tnu", "colegiado"]), tipo_data: new Set(["julgamento", "publicacao"]) };
+export const VERSAO_SERVIDOR = `node-${VERSAO}`;
+const RE_MARC_PARCIAL = /\[PESQUISA (?:NÃO REALIZADA|INCOMPLETA)\b/;
+
+export function tipoDoErroDiario(m) {
+  m = String(m ?? "");
+  if (/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed|evitando novas tentativas/i.test(m)) return "limite_de_ritmo";
+  if (/desafio|verifica[çc][ãa]o de navegador|cloudflare|just a moment/i.test(m)) return "desafio_navegador";
+  if (/recusa sistem[áa]tica|bloque|robotiza|automa[çc][ãa]o|HTTP 40[39]|HTTP 429/i.test(m)) return "bloqueio_do_portal";
+  if (/Muitos Usu[áa]rios/i.test(m)) return "portal_congestionado";
+  if (/tempo esgotado|timed? ?out/i.test(m)) return "timeout";
+  const mm = /\bHTTP (\d{3})\b|Server error '(\d{3})/.exec(m);
+  if (mm) return "http_" + (mm[1] || mm[2]);
+  if (/ConnectError|ReadError|certificate|CERT_|getaddrinfo|Name or service|Connection (?:refused|reset)|ECONN|ENOTFOUND|fetch failed/i.test(m)) return "rede_ou_certificado";
+  if (/sess[ãa]o|ViewState|resposta inesperada|n[ãa]o reconhec/i.test(m)) return "resposta_inesperada";
+  return "outro";
+}
+
+export function sanitizar(texto, maximo = 300) {
+  let t = String(texto ?? "").slice(0, 2000);   // red team 12/10/2026: regex sobre entrada ilimitada travava o servidor
+  t = t.replace(/\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/g, "<nº-processo>");
+  t = t.replace(/\b\d{1,7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/g, "<nº-processo>");
+  t = t.replace(/\b\d{4}\.\d{2}\.\d{2}\.\d{5,7}-?\d?\b/g, "<nº-processo>");
+  t = t.replace(/\d[\d.\-/]{8,40}\d/g, "<nº>");
+  t = t.replace(/\b\d{7,}\b/g, "<nº>");
+  t = t.replace(/[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{1,100}/g, "<email>");
+  t = t.replace(/https?:\/\/[^\s)"']{1,300}/g, (u) => u.replace(/[?#;].*$/, ""));
+  t = t.replace(/["“”][^"“”\n]{4,200}["“”]/g, "«…»");
+  t = t.replace(/'[^'\n]{4,200}'/g, "«…»");
+  t = t.replace(/«(?!…»)[^»\n]{1,200}»/g, "«…»");
+  return t.replace(/\s+/g, " ").trim().slice(0, maximo);
+}
+
+const nomeTipo = (v) => (typeof v === "boolean" ? "bool" : typeof v === "number" ? (Number.isInteger(v) ? "int" : "float") : typeof v === "object" ? "dict" : typeof v);
+export function descreverArgs(args) {
+  const out = {};
+  for (const [k, v] of Object.entries(args || {})) {
+    if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) continue;
+    if (VALORES_SEGUROS.has(k) && (typeof v === "number" || typeof v === "boolean" || typeof v === "string" || Array.isArray(v))) {
+      const ok = LISTA_BRANCA[k];
+      const FORA = "<valor fora da lista>";
+      const conv = (x) => ((typeof x === "string" || Number.isInteger(x)) ? (!ok || ok.has(String(x)) ? x : FORA) : FORA);
+      out[k] = Array.isArray(v) ? v.map(conv).slice(0, 10) : conv(v);
+      if (!ok) out[k] = Array.isArray(out[k]) ? out[k].filter(Number.isInteger) : Number.isInteger(out[k]) ? out[k] : FORA;
+    } else if (Array.isArray(v)) {
+      out[k] = Array.isArray(v[0]) ? `${v.length} grupo(s), ${v.reduce((s, g) => s + (g?.length || 0), 0)} termo(s)` : `${v.length} item(ns)`;
+    } else if (typeof v === "string") {
+      out[k] = `<texto: ${v.length} car.>`;
+    } else {
+      out[k] = nomeTipo(v);
+    }
+  }
+  return out;
+}
+
+export function registrarErro(ferramenta, { erro = null, texto = "", args = null, ms = null, parcial = false } = {}, env = process.env) {
+  try {
+    const msg = erro !== null && erro !== undefined ? String(erro?.message ?? erro) : String(texto || "");
+    const mh = /\bHTTP (\d{3})\b|Server error '(\d{3})/.exec(msg);
+    let lim = null;
+    try {
+      const e = comTrava(() => lerEstadoDisjuntor());
+      const agora = Date.now();
+      lim = { nivel: e.indiceJanela + 1, de: ESCADA_JANELA_MS.length,
+        ultimoMinuto: (e.requisicoes || []).filter((t) => agora - t <= 60_000).length, bloqueios: (e.incidentes || []).length };
+    } catch { lim = null; }
+    const entrada = {
+      quando: new Date().toISOString(), versao: VERSAO_SERVIDOR, sistema: `${process.platform} node ${process.versions.node}`,
+      ferramenta, tipo: tipoDoErroDiario(msg), http: mh ? (mh[1] || mh[2]) : null, parcial, ms,
+      args: descreverArgs(args), limitador: lim, mensagem: sanitizar(msg),
+    };
+    const arq = ARQUIVO_ERROS(env);
+    const fd = fs.openSync(arq, "a", 0o600);
+    try { fs.writeSync(fd, JSON.stringify(entrada) + "\n"); } finally { fs.closeSync(fd); }
+    try {
+      if (fs.statSync(arq).size > MAX_BYTES_ERROS) {
+        const ls = fs.readFileSync(arq, "utf-8").split("\n").filter(Boolean);
+        fs.writeFileSync(arq, ls.slice(-MAX_LINHAS_ERROS).join("\n") + "\n");
+      }
+    } catch { /* melhor esforço */ }
+    return entrada;
+  } catch {
+    return null;
+  }
+}
+
+/** _diario: anota exceção e resposta de falha ([PESQUISA NÃO REALIZADA/INCOMPLETA]); nunca quebra a ferramenta.
+ * Falha de ritmo LOCAL (disjuntor, fila) não é anotada: é o limitador funcionando, não erro. */
+export function comDiario(nome, fn, env = process.env) {
+  return async (a) => {
+    const t0 = Date.now();
+    let r;
+    try {
+      r = await fn(a);
+    } catch (e) {
+      registrarErro(nome, { erro: e, args: a, ms: Date.now() - t0 }, env);
+      throw e;
+    }
+    try {
+      if (nome !== "diagnostico_erros_trf1" && typeof r === "string" && RE_MARC_PARCIAL.test(r) && tipoDoErroDiario(r) !== "limite_de_ritmo") {
+        const mm = /^\s*\[([^\]]{0,400})\]/.exec(r);   // só o motivo entre colchetes: o corpo da resposta traz consulta e filtros
+        registrarErro(nome, { texto: mm ? `[${mm[1]}]` : "[PESQUISA NÃO REALIZADA]", args: a, ms: Date.now() - t0, parcial: r.slice(0, 40).includes("INCOMPLETA") }, env);
+      }
+    } catch { /* o registro nunca quebra a ferramenta */ }
+    return r;
+  };
+}
+
+const CAUSAS_ERRO = {
+  limite_de_ritmo: ["Muitas consultas na janela do limitador local.", "Espere o tempo indicado; use `buscar_recibos_trf1` para o que já foi lido.", "usuario"],
+  bloqueio_do_portal: ["O portal do CJF recusou ou bloqueou a consulta.", "Espere a pausa terminar e faça UMA busca; o site jurisprudencia.cjf.jus.br segue como alternativa. Se repetir com pouco tráfego, a causa é externa.", "portal"],
+  desafio_navegador: ["O portal pediu verificação de navegador (Cloudflare/WAF).", "Use o site pelo navegador; esta extensão não contorna.", "portal"],
+  portal_congestionado: ["O portal respondeu \"Muitos Usuários\" (congestionamento do CJF).", "Tente de novo em alguns minutos; não é erro da extensão.", "portal"],
+  timeout: ["O portal demorou mais que o limite.", "Repita com por_pagina menor ou mais tarde.", "portal"],
+  rede_ou_certificado: ["Falha de rede, DNS ou certificado.", "Confira a conexão/VPN/proxy. Se só esta extensão falha, relate.", "usuario"],
+  resposta_inesperada: ["O portal respondeu num formato que a extensão não reconhece.", "Pode ser mudança no portal: envie o relatório ao autor.", "autor"],
+  outro: ["Erro não classificado.", "É o mais útil para o autor: envie o relatório.", "autor"],
+};
+export function causaErro(tipo) {
+  if (tipo in CAUSAS_ERRO) return CAUSAS_ERRO[tipo];
+  if (tipo.startsWith("http_5")) return ["O portal respondeu erro de servidor.", "Repita depois; se só acontece com certos filtros, pode ser consulta mal formada (relate).", "portal"];
+  if (tipo.startsWith("http_4")) return ["O portal recusou a requisição (4xx).", "Provável filtro com grafia errada ou consulta mal formada: relate.", "autor"];
+  return CAUSAS_ERRO.outro;
+}
+
+export function lerErros(dias = 30, env = process.env) {
+  try {
+    const corte = Date.now() - dias * 86400_000;
+    const out = [];
+    for (const l of fs.readFileSync(ARQUIVO_ERROS(env), "utf-8").split("\n")) {
+      try {
+        const e = JSON.parse(l);
+        if (new Date(e.quando).getTime() >= corte) out.push(e);
+      } catch { continue; }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+const p2 = (n) => String(n).padStart(2, "0");
+export function fmtDataLocal(iso) {
+  const d = new Date(iso);
+  return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+// json.dumps do Python (separadores ", " e ": ", sem escapar não-ASCII)
+export function jsonPy(v) {
+  if (v === null || v === undefined) return "null";
+  if (Array.isArray(v)) return "[" + v.map(jsonPy).join(", ") + "]";
+  if (typeof v === "object") return "{" + Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${jsonPy(x)}`).join(", ") + "}";
+  return JSON.stringify(v);
+}
+
+export function resumirErros(ent, limite = 15, env = process.env) {
+  if (!ent.length) return "Nenhum erro registrado no período. O diário só anota falhas das ferramentas (nunca o que foi pesquisado).";
+  const grupos = new Map();
+  for (const e of ent) {
+    const chave = `${e.tipo}\u0000${e.ferramenta}`;
+    if (!grupos.has(chave)) grupos.set(chave, { tipo: e.tipo, ferramenta: e.ferramenta, n: 0, parciais: 0, primeiro: e.quando, ultimo: e.quando, versoes: new Set(), amostra: e });
+    const g = grupos.get(chave);
+    g.n += 1;
+    g.parciais += e.parcial ? 1 : 0;
+    g.versoes.add(String(e.versao));
+    if (e.quando < g.primeiro) g.primeiro = e.quando;
+    if (e.quando >= g.ultimo) { g.ultimo = e.quando; g.amostra = e; }
+  }
+  const lista = [...grupos.values()].sort((a, b) => b.n - a.n);
+  const out = [`**Diário de erros** — ${ent.length} registro(s) em ${lista.length} padrão(ões), de ${fmtDataLocal(ent[0].quando)} a ${fmtDataLocal(ent[ent.length - 1].quando)}. Arquivo: ${ARQUIVO_ERROS(env)}`, ""];
+  for (const g of lista.slice(0, Math.max(1, limite))) {
+    const [causa, acao, quem] = causaErro(g.tipo);
+    const a = g.amostra;
+    out.push(`- **${g.tipo}** em \`${g.ferramenta}\` · ${g.n}× (${g.parciais} parcial/incompleto) · de ${fmtDataLocal(g.primeiro)} a ${fmtDataLocal(g.ultimo)} · ${[...g.versoes].sort().join(", ")}\n` +
+      `  Causa provável: ${causa} Ação: ${acao} _(quem corrige: ${quem})_\n  Última mensagem: ${a.mensagem}${a.http ? " (HTTP " + a.http + ")" : ""}`);
+  }
+  const autor = lista.filter((g) => causaErro(g.tipo)[2] === "autor").reduce((s, g) => s + g.n, 0);
+  out.push("", autor
+    ? `⚠️ ${autor} registro(s) são de causa que o AUTOR pode corrigir: rode \`diagnostico_erros_trf1\` com relatorio=true e abra uma issue com o relatório.`
+    : "Nenhum registro de causa corrigível pelo autor neste período (os demais vêm do portal, da rede ou do ritmo).");
+  return out.join("\n");
+}
+
+export function relatorioErros(ent, limite = 20) {
+  const ult = ent.slice(-limite);
+  const linhas = ult.map((e) => {
+    const lim = e.limitador;
+    const limT = lim && typeof lim === "object" ? `${lim.nivel}/${lim.de}, ${lim.ultimoMinuto}/min` : "";
+    return `| ${String(e.quando).slice(0, 16).replace("T", " ")} | ${e.ferramenta} | ${e.tipo}${e.http ? " (" + e.http + ")" : ""}` +
+      `${e.parcial ? " parcial" : ""} | ${e.ms || ""} | ${limT} | ${e.mensagem} | ${jsonPy(e.args || {})} |`;
+  });
+  return ["**Relatório técnico para análise** (sem texto de busca, sem nomes e sem número de processo; pode ser colado em issue pública)", "",
+    `- Versão: ${VERSAO_SERVIDOR} · Sistema: ${process.platform} node ${process.versions.node}`, `- Registros: ${ent.length} (últimos ${ult.length} abaixo)`, "",
+    "| Quando | Ferramenta | Tipo | ms | Limitador | Mensagem | Parâmetros |", "|---|---|---|---|---|---|---|", ...linhas, "",
+    `Abrir issue: ${ISSUES_NOVA}`].join("\n");
+}
+
+/** Tool diagnostico_erros_trf1 (sem rede). */
+export function diagnosticoErros({ dias = 30, limite = 15, relatorio = false } = {}, env = process.env) {
+  try {
+    const d = Math.max(1, Math.min(Math.trunc(Number(dias) || 30), 365));
+    const l = Math.trunc(Number(limite) || 15);
+    const ent = lerErros(d, env);
+    return relatorio && ent.length ? relatorioErros(ent, Math.max(1, Math.min(l, 50))) : resumirErros(ent, l, env);
+  } catch (e) {
+    return carimboNaoRealizada(`diagnóstico de erros falhou (${e.name}: ${e.message})`);
+  }
+}
+
+// ----------------------------------------- julgados que citam este e linha do tempo por tese ---
+// Porte do TJRO v1.25. Leitura assistida: NÃO detecta superação.
+const RE_SINAL_AFASTA = /(?<![a-z0-9])(?:distingue|distinguish\w*|distincao|nao se aplica|inaplicavel|nao se amolda|nao guarda similitude|nao ha similitude|situacao diversa|hipotese diversa|caso diverso|em sentido contrario|em sentido diverso|contrariamente|diverge|divergente|afasta(?:-se)? a aplicacao|nao ha identidade|nao incide|nao se verifica a mesma)(?![a-z0-9])/;
+export const ANOS_TIMELINE_MAX = 6;
+
+/** Sinal lexical FRACO de que quem cita distingue ou não aplica o citado (não medido no TRF1/TNU). */
+export function sinalAfastamento(janela) { return RE_SINAL_AFASTA.test(norm(janela)); }
+
+/** Trechos em volta do termo destacado («…») na ementa e no dispositivo do documento que CITA. */
+export function janelasDestacadas(d, antes = 300, depois = 220, maximo = 2) {
+  const out = [];
+  for (const campo of ["ementa", "decisao"]) {
+    const t = limpar(d[campo] || "", 0);
+    let pos = 0;
+    while (out.length < maximo) {
+      const i = t.indexOf("«", pos);
+      if (i < 0) break;
+      const j = t.indexOf("»", i);
+      const fimDestaque = (j >= 0 ? j : i) + 1;
+      out.push(t.slice(Math.max(0, i - antes), fimDestaque + depois).replace(/\s+/g, " ").trim());
+      pos = fimDestaque + depois;
+    }
+  }
+  return out;
+}
+
+const paraInt = (v, rotulo) => {
+  const n = Math.trunc(Number(v));
+  if (!Number.isFinite(n)) throw new Error(`invalid literal for int() with base 10: ${JSON.stringify(String(v))} (${rotulo})`);
+  return n;
+};
+
+export async function julgadosQueCitam(a = {}, fetchImpl = fetch, env = process.env) {
+  let base, dig, limite, dados;
+  try {
+    base = validarBase(a.base);
+    dig = soDigitos(a.numero);
+    if (dig.length < 15) throw new Error("informe o número do processo citado com pelo menos 15 dígitos (CNJ de 20 dígitos, com ou sem máscara; ou o número antigo do Pedilef)");
+    limite = Math.max(1, Math.min(paraInt(a.limite || 10, "limite"), 30));
+  } catch (e) {
+    return erroDeParametro(e);
+  }
+  try {
+    const formas = dig.length === 20 ? [cnj(dig), dig] : [dig];
+    const tipos = validarTipos(base !== "colegiado" ? ["ACORDAO", "DECISAOMONO"] : null, base);
+    const fontes = BASES[base].fonte ? validarFontes(null) : [];
+    dados = await consultarPortal(montarConsulta("", [formas]), tipos, fontes, 1, 50, {}, "julgamento", "citantes", base, [], fetchImpl, env);
+  } catch (e) {
+    if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(e.message);
+    return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
+  }
+  const { docs, total } = dados;
+  const rotulo = BASES[base].rotulo;
+  const outros = docs.filter((d) => d.numero_digitos !== dig);
+  const proprios = docs.length - outros.length;
+  const achados = outros.map((d) => [d, janelasDestacadas(d)]);
+  const comJanela = achados.filter((x) => x[1].length);
+  const out = [`**Julgados do ${rotulo} que citam ${dig.length === 20 ? cnj(dig) : dig}** — ${comJanela.length} com o número na ementa ou no dispositivo, ` +
+    `entre os ${docs.length} documento(s) lidos dos ${total} que o portal casou com o número` +
+    (proprios ? ` (${proprios} são do próprio processo e foram descartados).` : ".")];
+  comJanela.slice(0, limite).forEach(([d, jan], k) => {
+    const sinal = jan.some((j) => sinalAfastamento(j)) ? " · ⚠️ sinal lexical de afastamento (fraco)" : "";
+    out.push(`\n${k + 1}. ${d.numero || "(sem número)"} · ${d.orgao || "?"} · ${d.data_julgamento || "—"} · Rel. ${d.relator || "—"} · id ${d.id}${sinal}\n> ${jan[0].slice(0, 520)}`);
+  });
+  const semJanela = achados.length - comJanela.length;
+  if (semJanela) out.push(`\n_${semJanela} documento(s) casaram o número só fora da ementa e do dispositivo (por exemplo no campo de número ou no inteiro teor): abra com obter_decisao_trf1 para ver o contexto._`);
+  if (!comJanela.length && !semJanela) out.push("Nenhum outro julgado do portal traz esse número. Zero aqui não prova que ninguém o aplicou: o portal indexa ementa e dispositivo, e o número pode estar escrito de outro jeito.");
+  if (total > docs.length) out.push(`_O portal casou ${total} documentos; esta ferramenta lê só os 50 primeiros._`);
+  out.push("\n_Só leitura assistida, sem medição própria no TRF1/TNU (no TJRO, em 486 citações medidas às cegas: 51% seguem o citado, 44% só mencionam, 3% o afastam e nenhuma o declarou superado). " +
+    "Superação NÃO é detectada aqui: leia as janelas. Superação vinculante (súmula, repetitivo, IRDR) se confere no BNP/fonte oficial._");
+  return out.join("\n");
+}
+
+export function formatarLinhaDoTempo(linhas, filtros, incompleta = "") {
+  const cab = incompleta ? `[PESQUISA INCOMPLETA — ${incompleta}]\n` : "";
+  const out = [cab + `**Linha do tempo no TRF1** (${filtros}) — contagem por documento do portal; resultado declarado lido do dispositivo, 1× por julgamento, ` +
+    "em AMOSTRA (os 50 primeiros de cada ano). Mudança de proporção é sinal para ler, nunca prova de superação.", "",
+    "| Ano | Documentos | Julgamentos na amostra | Resultado declarado |", "|---|---|---|---|"];
+  for (const l of linhas) {
+    const res = l.res.map(([rot, n]) => `${n} ${rot}`).join(", ") || "—";
+    out.push(`| ${l.ano} | ${l.total} | ${l.julgamentos} | ${res} |`);
+  }
+  return out.join("\n");
+}
+
+export async function linhaDoTempo(a = {}, fetchImpl = fetch, env = process.env) {
+  let consultaM, ai, af, tipos, fontes;
+  const orgao = a.orgao_julgador;
+  try {
+    consultaM = montarConsulta(a.consulta || "", a.grupos);
+    if (!consultaM) throw new Error("informe `consulta` ou `grupos`: a linha do tempo precisa de uma tese");
+    const hoje = new Date().getFullYear();
+    af = paraInt(a.ano_fim || hoje, "ano_fim");
+    ai = paraInt(a.ano_inicio || (af - 4), "ano_inicio");
+    if (ai > af || ai < 1989 || af > hoje + 1) throw new Error(`anos inválidos (${ai}–${af})`);
+    if (af - ai + 1 > ANOS_TIMELINE_MAX) throw new Error(`no máximo ${ANOS_TIMELINE_MAX} anos por chamada (cada ano gasta 3 a 4 requisições ao portal); recebi ${af - ai + 1}`);
+    tipos = validarTipos(["ACORDAO"], "trf1");
+    fontes = validarFontes(null);
+  } catch (e) {
+    return erroDeParametro(e);
+  }
+  const filtros = `${consultaM} · ${ai}–${af}` + (orgao ? ` · órgão: ${orgao}` : "");
+  const linhas = [];
+  for (let ano = ai; ano <= af; ano++) {
+    const av = { data_inicio: `01/01/${ano}`, data_fim: `31/12/${ano}` };
+    if (orgao && String(orgao).trim()) av.orgao_julgador = String(orgao).trim();
+    let dados;
+    try {
+      dados = await consultarPortal(consultaM, tipos, fontes, 1, 50, av, "julgamento", "linha_do_tempo", "trf1", [], fetchImpl, env);
+    } catch (e) {
+      if (e instanceof PesquisaNaoRealizada) {
+        if (!linhas.length) return carimboNaoRealizada(e.message);
+        return formatarLinhaDoTempo(linhas, filtros, `parou em ${ano} (${e.message.trim().replace(/\.$/, "").slice(0, 160)}); anos feitos: ${linhas[0].ano}–${linhas[linhas.length - 1].ano}`);
+      }
+      return carimboNaoRealizada(`erro inesperado em ${ano} (${e.name}: ${e.message})`);
+    }
+    const r = resumoResultadosPagina(dados.docs);
+    const res = Object.keys(ROTULOS_RESULTADO).filter((k) => r.contagem[k]).map((k) => [ROTULOS_RESULTADO[k], r.contagem[k]]);
+    linhas.push({ ano, total: dados.total, julgamentos: r.total_julgamentos, res });
+  }
+  return formatarLinhaDoTempo(linhas, filtros);
+}
 
 // ---------------------------------------------------------------- crédito e versão ---
 export const CREDITO = "_Esta extensão foi desenvolvida por @robertogrecia (Roberto Grécia Bessa, OAB/RO 7865-A). Obrigado por usar!_";
