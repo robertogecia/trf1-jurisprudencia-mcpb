@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.5.2";
+export const VERSAO = "1.5.3";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -1458,7 +1458,8 @@ async function requisitar(jar, metodo, url, operacao, { data, headers = {}, espe
       ? await fetchImpl(url, { headers: h, signal: AbortSignal.timeout(45_000) })
       : await fetchImpl(url, { method: "POST", headers: h, body: paresParaForm(data), signal: AbortSignal.timeout(45_000) });
   } catch (e) {
-    throw new PesquisaNaoRealizada(`falha de rede ao consultar o portal (${e.name}: ${e.message}) — tente de novo em instantes`);
+    const causa = e.cause?.code || e.cause?.message || ""; // "fetch failed" sozinho não diz se foi DNS, certificado, reset ou o portal fora
+    throw new PesquisaNaoRealizada(`falha de rede ao consultar o portal (${e.name}: ${e.message}${causa ? ` — causa: ${String(causa).slice(0, 120)}` : ""}) — tente de novo em instantes`);
   }
   jar.aplicar(r.headers);
   const ctype = (r.headers.get("content-type") || "").toLowerCase();
@@ -1688,6 +1689,7 @@ export async function buscar(a, fetchImpl = fetch, env = process.env) {
     pagina = Math.max(1, Number(a.pagina || 1));
     porPagina = Number(a.por_pagina || 30);
     if (!POR_PAGINA_VALIDOS.includes(porPagina)) throw new Error(`por_pagina inválido: ${porPagina}; o portal aceita ${JSON.stringify(POR_PAGINA_VALIDOS)}`);
+    if (a.origem && validarOrigem(String(a.origem))) throw new Error(validarOrigem(String(a.origem)));
     for (const [chave, valor] of [["relator", a.relator], ["orgao_julgador", a.orgao_julgador], ["classe", a.classe],
       ["origem", a.origem], ["numero", a.numero], ["ementa_decisao", a.ementa_decisao], ["referencia_legislativa", a.referencia_legislativa]]) {
       if (valor && String(valor).trim()) avancados[chave] = String(valor).trim();
@@ -1944,6 +1946,15 @@ const LISTA_BRANCA = { tipo: new Set(["ACORDAO", "SUMULA", "ARGUICAO", "DECISAOM
 export const VERSAO_SERVIDOR = `node-${VERSAO}`;
 const RE_MARC_PARCIAL = /\[PESQUISA (?:NÃO REALIZADA|INCOMPLETA)\b/;
 
+/** O campo "Origem" do portal é o TRIBUNAL de origem ("TRF - PRIMEIRA REGIÃO"); UF e seção judiciária nunca casam (medido 12/10/2026). Recusa antes de gastar requisição. */
+export function validarOrigem(v) {
+  const f = fold(v).trim();
+  if (/^[a-z]{2}$/.test(f) || /(secao|subsecao|judiciari|rondonia|estado de)/.test(f)) {
+    return `o filtro origem não aceita estado nem seção judiciária ("${v.slice(0, 40)}"): ele casa o TRIBUNAL de origem ("TRF - PRIMEIRA REGIÃO"). Nada foi consultado. Refaça sem origem; a unidade aparece nos 4 últimos dígitos do número CNJ de cada resultado (ex.: .4.01.4100).`;
+  }
+  return "";
+}
+
 export function tipoDoErroDiario(m) {
   m = String(m ?? "");
   if (/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed|evitando novas tentativas/i.test(m)) return "limite_de_ritmo";
@@ -1953,7 +1964,9 @@ export function tipoDoErroDiario(m) {
   if (/tempo esgotado|timed? ?out/i.test(m)) return "timeout";
   const mm = /\bHTTP (\d{3})\b|Server error '(\d{3})/.exec(m);
   if (mm) return "http_" + (mm[1] || mm[2]);
-  if (/ConnectError|ReadError|certificate|CERT_|getaddrinfo|Name or service|Connection (?:refused|reset)|ECONN|ENOTFOUND|fetch failed/i.test(m)) return "rede_ou_certificado";
+  if (/certificate|CERT_|SSL|TLS|self[- ]signed|UNABLE_TO_VERIFY/i.test(m)) return "certificado";
+  if (/getaddrinfo|ENOTFOUND|EAI_AGAIN|Name or service|ECONNREFUSED|Connection refused|ENETUNREACH|EHOSTUNREACH/i.test(m)) return "dns_ou_rede_local";
+  if (/ConnectError|ReadError|ECONNRESET|ECONN|Connection reset|UND_ERR|socket|fetch failed/i.test(m)) return "conexao_interrompida";
   if (/sess[ãa]o|ViewState|resposta inesperada|n[ãa]o reconhec/i.test(m)) return "resposta_inesperada";
   return "outro";
 }
@@ -2054,7 +2067,10 @@ const CAUSAS_ERRO = {
   desafio_navegador: ["O portal pediu verificação de navegador (Cloudflare/WAF).", "Use o site pelo navegador; esta extensão não contorna.", "portal"],
   portal_congestionado: ["O portal respondeu \"Muitos Usuários\" (congestionamento do CJF).", "Tente de novo em alguns minutos; não é erro da extensão.", "portal"],
   timeout: ["O portal demorou mais que o limite.", "Repita com por_pagina menor ou mais tarde.", "portal"],
-  rede_ou_certificado: ["Falha de rede, DNS ou certificado.", "Confira a conexão/VPN/proxy. Se só esta extensão falha, relate.", "usuario"],
+  certificado: ["Certificado TLS recusado (antivírus, proxy ou data do computador errada).", "Verifique a data/hora do computador e se há antivírus ou proxy inspecionando HTTPS.", "usuario"],
+  dns_ou_rede_local: ["Sem rede, DNS ou rota até o portal (lado do seu computador).", "Confira a internet/VPN/proxy; teste o portal no navegador.", "usuario"],
+  conexao_interrompida: ["A conexão caiu no meio: pode ser o portal fora do ar ou a rede.", "Espere alguns minutos e tente UMA vez; se o portal abre no navegador e a extensão não, relate com o relatório.", "portal"],
+  rede_ou_certificado_antigo: ["Falha de rede, DNS ou certificado.", "Confira a conexão/VPN/proxy. Se só esta extensão falha, relate.", "usuario"],
   resposta_inesperada: ["O portal respondeu num formato que a extensão não reconhece.", "Pode ser mudança no portal: envie o relatório ao autor.", "autor"],
   outro: ["Erro não classificado.", "É o mais útil para o autor: envie o relatório.", "autor"],
 };
