@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.5.3";
+export const VERSAO = "1.5.4";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -759,8 +759,22 @@ export function ancoras(texto, maxItens = ANCORAS_MAX) {
   return [...achado.entries()].sort((a, b) => a[1] - b[1]).map(([nome]) => nome).slice(0, maxItens);
 }
 
+const RE_SESSAO_DATA = /sess[ãa]o[^.]{0,70}?(\d{2}\/\d{2}\/\d{4})(?:\s*(?:a|à|até|e)\s*(\d{2}\/\d{2}\/\d{4}))?/i;
+/** A data de "Julgamento" do índice pode não ser a da sessão (relato de 12/10/2026). Só avisa; quem manda é o dispositivo/inteiro teor. */
+export function avisoDataSessao(d) {
+  const idx = dataIso(d.data_fecho || d.data_julgamento || "");
+  const m = RE_SESSAO_DATA.exec(limpar(d.decisao || "", 0));
+  if (!idx || !m) return "";
+  const ini = dataIso(m[1]), fim = dataIso(m[2] || m[1]);
+  if (!ini || !fim || (ini <= idx && idx <= fim)) return "";
+  const cit = m[1] + (m[2] ? ` a ${m[2]}` : "");
+  return `⚠️ Data do índice (${idx.slice(8)}/${idx.slice(5, 7)}/${idx.slice(0, 4)}) diverge da sessão citada no dispositivo (${cit}): para citar a data do julgamento, confira no inteiro teor ou na ata.`;
+}
+
 export function linhasDeSinais(d) {
   const linhas = [];
+  const ad = avisoDataSessao(d);
+  if (ad) linhas.push(ad);
   const tipo = fold(d.tipo || "");
   if (tipo.includes("monocrat") || tipo.includes("presid")) {
     linhas.push("⚠️ decisão monocrática/da presidência: não é precedente do colegiado — serve para ver como o relator decide, não para citar como jurisprudência do órgão.");
@@ -943,6 +957,9 @@ export function formatBusca(docs, total, meta) {
   for (const a of meta.avisos || []) linhas.push(`⚠️ ${a}`);
   if (total > 3000 && pagina === 1) {
     linhas.push('Dica: total alto — restrinja com `E` (ex.: `"dano moral" E negativação`), com `grupos`, com `[EMEN]` para buscar só na ementa, ou com filtro de órgão/relator/data.');
+  }
+  if (fold(filtros.orgao_julgador || "").includes("recursal") && (meta.base || "trf1") === "trf1") {
+    linhas.push('⚠️ O filtro de órgão casa por TRECHO do nome. Em 2026 parte das Turmas Recursais aparece com nome novo (ex.: "PRIMEIRA TURMA 4.0 - ADJUNTA A TR-AC", medido em 12/10/2026) e fica de fora de "TURMA RECURSAL". Para cobrir os dois nomes, filtre por "PRIMEIRA TURMA" (ou o trecho comum) e identifique a unidade pelo número CNJ.');
   }
   if (!docs.length && !total && filtros.origem) {
     linhas.push('⚠️ O filtro `origem` casa o campo "Origem" do portal, que é o TRIBUNAL de origem (nos resultados aparece "TRF - PRIMEIRA REGIÃO"), e NÃO o estado nem a seção judiciária: "RO" ou "Rondônia" nunca casam. Refaça sem `origem`; a unidade de origem aparece nos 4 últimos dígitos do número CNJ de cada resultado (ex.: .4.01.4100). Zero aqui foi do filtro, não do assunto.');
@@ -1268,7 +1285,7 @@ export function reservarRequisicao(agora = Date.now()) {
     e.requisicoes = e.requisicoes.filter((t) => agora - t <= janela);
     if (e.requisicoes.length >= JANELA_MAX_REQS) {
       const espera = janela - (agora - e.requisicoes[0]);
-      return { erro: `Muitas consultas em pouco tempo (limite atual: ${JANELA_MAX_REQS} requisições a cada ${fmtHms(janela)}, compartilhado por todos os processos desta extensão nesta máquina; cada busca gasta 2 a 4). Aguarde ${fmtHms(espera)} e tente de novo.` };
+      return { erro: `Muitas consultas em pouco tempo (limite atual: ${JANELA_MAX_REQS} requisições a cada ${fmtHms(janela)}, compartilhado por todos os processos desta extensão nesta máquina; cada busca gasta 2 a 4). Aguarde ${fmtHms(Math.max(1000, Math.ceil(espera / 1000) * 1000))} e tente de novo (esta tentativa não gastou requisição).` };
     }
     const vaga = Math.max(agora, e.proximoLivreEm);
     const esperar = vaga - agora;

@@ -541,3 +541,14 @@ test("regressão v1.5.2: cada parâmetro do painel avançado tem a SUA descriç�
   assert.match(descr.origem, /TRIBUNAL de origem/);
   assert.doesNotMatch(descr.relator, /Origem/);
 });
+
+test("data do índice que diverge da sessão citada no dispositivo vira aviso; coerente ou sem sessão, não", () => {
+  assert.match(lib.avisoDataSessao({ data_julgamento: "04/02/2026", decisao: "Decide a Turma, por unanimidade, na sessão virtual de 21/07/2025 a 25/07/2025, negar provimento." }), /diverge da sessão/);
+  assert.equal(lib.avisoDataSessao({ data_julgamento: "23/07/2025", decisao: "Na sessão virtual de 21/07/2025 a 25/07/2025, por unanimidade." }), "");
+  assert.equal(lib.avisoDataSessao({ data_julgamento: "04/02/2026", decisao: "por unanimidade, negar provimento" }), "");
+});
+
+test("filtro de órgão 'recursal' avisa do nome novo 'TURMA 4.0 - ADJUNTA'", () => {
+  const out = lib.formatBusca([], 0, { consulta_montada: "x", tipos: [], fontes: [], pagina: 1, por_pagina: 10, filtros: { orgao_julgador: "PRIMEIRA TURMA RECURSAL" }, base: "trf1" });
+  assert.match(out, /TRECHO do nome/);
+});
