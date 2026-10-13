@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.5.4";
+export const VERSAO = "1.5.5";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
