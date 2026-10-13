@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.5.5";
+export const VERSAO = "1.5.6";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -688,6 +688,47 @@ export function votacaoDoDocumento(d) {
 }
 
 export const FATOS_MAX = 1200;
+
+// TESE DA EMENTA (porte do TJRO v1.29.0, H06; espelho de _tese_da_ementa do Python): tese literal da ementa do modelo CNJ.
+// A busca corta a ementa em 800 caracteres e a tese fica nos ÚLTIMOS itens: sem esta linha ela some do resultado.
+export const TESE_MAX = 1000;
+const RE_TESE_ROTULO = /\bteses? de julgamento ?:? ?/;
+export function teseDaEmenta(texto, teto = TESE_MAX) {
+  const t = semDestaque(String(texto || ""));
+  const iv = secoesDaEmenta(t, 0, t.length).find((x) => x.nome === "dispositivo e tese" || x.nome === "dispositivo");
+  if (!iv) return null;
+  const seg = t.slice(iv.a, iv.b);
+  const nseg = norm1(seg);
+  const m = RE_TESE_ROTULO.exec(nseg);
+  if (!m) return null;
+  const tese = seg.slice(m.index + m[0].length).replace(/\s+/g, " ").trim();
+  if (!tese) return null;
+  const inicios = [...tese.matchAll(/(?<![^ ])\d{1,2}\. /g)].map((x) => x.index);
+  const total = inicios.length >= 2 && inicios[0] < 5 ? inicios.length : 1;
+  if (tese.length <= teto) return { texto: tese, total, exibidos: total, completa: true };
+  if (total > 1) {
+    const ate = inicios.filter((p) => p > 0 && p <= teto);
+    if (ate.length) {
+      const p = ate[ate.length - 1];
+      return { texto: tese.slice(0, p).replace(/ +$/, ""), total, exibidos: inicios.indexOf(p), completa: false };
+    }
+  }
+  const fim = tese.lastIndexOf(". ", teto - 1);
+  const corte = fim > 0 ? tese.slice(0, fim + 1) : tese.slice(0, teto).replace(/ \S*$/, "");
+  return { texto: corte.trim(), total, exibidos: 0, completa: false };
+}
+export function linhaTese(te) {
+  const inc = te.completa ? "" : " […]";
+  const aviso = te.completa ? "" : `${te.total > 1 ? ` ⚠️ TESE INCOMPLETA: ${te.exibidos} de ${te.total} itens` : " ⚠️ TESE INCOMPLETA: trecho parcial"}; abra o inteiro teor antes de fichar.`;
+  return `TESE DA EMENTA (literal; tese enunciada pelo órgão, não prova de ratio): «${te.texto}${inc}»${aviso}`;
+}
+/** Só quando a tese NÃO cabe no trecho de ementa que a busca mostra (senão repetiria o que já está na tela). */
+export function linhaTeseDaBusca(ementa) {
+  const te = teseDaEmenta(ementa);
+  if (!te) return "";
+  if (norm1(trechoCentrado(ementa, TRECHO_EMENTA)).includes(norm1(te.texto))) return "";
+  return linhaTese(te);
+}
 const RE_LIXO_WORD = /^\s*(?:\d+(?:\.\d+)?\s+\d+x\d+\s+)?(?:Normal\s+)?(?:\d+\s+){0,3}(?:(?:false|true)\s+){1,3}(?:[A-Z]{2}-[A-Z]{2}\s+|X-NONE\s+){1,3}(?:MicrosoftInternetExplorer\d\s+)?/;
 // \w/\W/\b do Python são Unicode; aqui ficam explícitos com \p{L}\p{N}_ (flag u)
 const W = "[\\p{L}\\p{N}_]", NW = "[^\\p{L}\\p{N}_]";
@@ -996,6 +1037,8 @@ export function formatBusca(docs, total, meta) {
     const em = d.ementa || "";
     if (em.length > TRECHO_EMENTA) houveCorte = true;
     linhas.push(`  Ementa (trecho): ${trechoCentrado(em, TRECHO_EMENTA) || "—"}`);
+    const lt = linhaTeseDaBusca(em);
+    if (lt) linhas.push(`  ${lt}`);
     if (d.decisao) linhas.push(`  Dispositivo: ${trechoCentrado(d.decisao, TRECHO_DECISAO)}`);
     const irmaos = porNumero.get(d.numero_digitos) || [];
     if (irmaos.length > 1 && irmaos[0] === d) {
