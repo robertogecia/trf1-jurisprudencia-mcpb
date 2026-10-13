@@ -552,3 +552,19 @@ test("filtro de órgão 'recursal' avisa do nome novo 'TURMA 4.0 - ADJUNTA'", ()
   const out = lib.formatBusca([], 0, { consulta_montada: "x", tipos: [], fontes: [], pagina: 1, por_pagina: 10, filtros: { orgao_julgador: "PRIMEIRA TURMA RECURSAL" }, base: "trf1" });
   assert.match(out, /TRECHO do nome/);
 });
+
+test("TESE DA EMENTA (porte do TJRO v1.29.0): literal, só quando não cabe no trecho, cortada em item inteiro", () => {
+  const emt = "EMENTA DIREITO CIVIL. I. CASO EM EXAME Apelação. II. QUESTÃO EM DISCUSSÃO Dano moral. III. RAZÕES DE DECIDIR Fundamento. IV. DISPOSITIVO E TESE Recurso provido. Tese de julgamento: 1. A negativação indevida gera dano moral. 2. O valor segue a razoabilidade. Dispositivos relevantes citados: CDC, art. 42.";
+  assert.deepEqual(lib.teseDaEmenta(emt), { texto: "1. A negativação indevida gera dano moral. 2. O valor segue a razoabilidade.", total: 2, exibidos: 2, completa: true });
+  assert.equal(lib.teseDaEmenta("EMENTA sem seções. Recurso provido."), null);
+  assert.equal(lib.teseDaEmenta("I. CASO EM EXAME x. IV. DISPOSITIVO E TESE Recurso provido."), null);
+  const longa = "I. CASO EM EXAME x. IV. DISPOSITIVO E TESE Recurso provido. Teses de julgamento: " + [1, 2, 3, 4].map((n) => `${n}. ` + "Item longo da tese. ".repeat(20)).join(" ");
+  const tl = lib.teseDaEmenta(longa);
+  assert.equal(tl.completa, false); assert.equal(tl.total, 4); assert.equal(tl.exibidos, 2); assert.ok(tl.texto.length <= 1000 && !tl.texto.includes("3. Item"));
+  assert.match(lib.linhaTese(tl), /TESE INCOMPLETA: 2 de 4 itens; abra o inteiro teor antes de fichar/);
+  assert.ok(lib.linhaTese(lib.teseDaEmenta(emt)).startsWith("TESE DA EMENTA (literal; tese enunciada pelo órgão, não prova de ratio): «1. A negativação"));
+  const emlonga = "DIREITO X. I. CASO EM EXAME " + "texto do caso. ".repeat(120) + "IV. DISPOSITIVO E TESE Recurso «provido». Tese de julgamento: 1. A tese «literal» do órgão.";
+  const lt = lib.linhaTeseDaBusca(emlonga);
+  assert.ok(lt.includes("literal") && !lt.split("«", 2)[1].split("»")[0].includes("«"));
+  assert.equal(lib.linhaTeseDaBusca(emt), ""); assert.equal(lib.linhaTeseDaBusca(""), "");
+});
