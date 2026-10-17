@@ -6,7 +6,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # A extensão é instalada em Windows, macOS e Linux; o defeito da trava (caminho "\C:\...%20") só aparecia no Windows (12/10/2026).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
