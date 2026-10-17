@@ -36,11 +36,11 @@
   "tools": [
     {
       "name": "buscar_jurisprudencia_trf1",
-      "description": "Pesquisa jurisprudência do TRF1/JEF1 e da TNU (portal do CJF) por tema, com operadores do motor e `grupos` de sinônimos. Cada resultado traz citação pronta (hiperlinkada quando há link específico do documento), nível de verificação e sinais do julgado."
+      "description": "Pesquisa jurisprudência do TRF1/JEF1 e da TNU (portal do CJF) por tema, com operadores do motor e `grupos` de sinônimos. Cada resultado traz citação pronta (hiperlinkada quando há link específico do documento), nível de verificação e sinais do julgado. Guarda um recibo simples de cada resultado neste computador."
     },
     {
       "name": "obter_decisao_trf1",
-      "description": "Todos os documentos publicados sob um número de processo, com ementa e dispositivo integrais — e, na TNU, o inteiro teor com órgão/relator/data lidos do fecho. Grava recibo em disco."
+      "description": "Todos os documentos publicados sob um número de processo, com ementa e dispositivo integrais — e, na TNU, o inteiro teor com órgão/relator/data lidos do fecho, sem repetir o que já está nele. Com modo=\"triagem\", só o resultado, a tese, os fatos e os sinais (leitura barata). Grava recibo em disco."
     },
     {
       "name": "verificar_citacao_trf1",
@@ -48,11 +48,11 @@
     },
     {
       "name": "diagnostico_ritmo_trf1",
-      "description": "Explica por que as buscas podem estar falhando (limite de ritmo, bloqueio em curso, histórico). Não consulta o portal."
+      "description": "Explica por que as buscas podem estar falhando (limite de ritmo, bloqueio em curso, histórico). Com relatorio=true, mostra a taxa de falha por intervalo entre consultas. Não consulta o portal."
     },
     {
       "name": "buscar_recibos_trf1",
-      "description": "Procura, sem acessar a internet, nos julgados que você já abriu antes neste computador (palavras, sinônimos, processo, relator). Zero resultado nunca quer dizer que o julgado não existe."
+      "description": "Procura, sem acessar a internet, nos julgados que a busca e a abertura de decisões já guardaram neste computador (palavras, sinônimos, processo, relator, ou o caso descrito com as suas palavras). Zero resultado nunca quer dizer que o julgado não existe."
     },
     {
       "name": "julgados_que_citam_trf1",

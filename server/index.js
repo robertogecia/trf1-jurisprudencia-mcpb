@@ -20,6 +20,8 @@ import {
   obterDecisao,
   verificarCitacao,
   diagnosticoRitmoTexto,
+  relatorioDeRitmo,
+  carimboNaoRealizada,
   buscarRecibos,
   diagnosticoErros,
   julgadosQueCitam,
@@ -64,7 +66,12 @@ server.registerTool(
       "'mesmo número, N documentos' e resultados opostos no mesmo julgamento. Com 3+ resultados, resume " +
       "offline quantos julgamentos declaram cada resultado. Antes de citar, use obter_decisao_trf1. " +
       "Falha (ritmo, bloqueio, rede, portal) sai como [PESQUISA NÃO REALIZADA — motivo]: nunca é \"não " +
-      "localizado\"; erro de parâmetro sai como \"Erro de parâmetro\".",
+      "localizado\"; erro de parâmetro sai como \"Erro de parâmetro\". " +
+      "Efeito local: os documentos da página são gravados como RECIBOS de origem \"busca\" em ~/.trf1-jurisprudencia-recibos (ementa e dispositivo " +
+      "integrais, sem o destaque «»; na TNU, SEM inteiro teor, que a lista não traz). Isso poupa reabrir o número só para citar, mas a busca nunca " +
+      "sobrescreve um recibo que já exista, o recibo de busca não prova que o processo esteja completo (verificar_citacao_trf1 não conclui ausência " +
+      "por ele e, na TNU, vai ao portal) e, acima de TRF1_MCP_RECIBOS_BUSCA_MAX_MB (padrão 300), os de busca mais antigos são removidos; os de " +
+      "obter_decisao_trf1 nunca.",
     inputSchema: {
       consulta: z.string().default("").describe("Consulta livre na sintaxe do motor (pode ser \"\" quando usar grupos)."),
       tipo: z.array(z.string()).optional().describe("Tipos de documento. Padrão [\"ACORDAO\"]. Depende da base."),
@@ -113,13 +120,22 @@ server.registerTool(
       "revisor-adversarial conferem a ficha depois, sem gastar o orçamento do portal, e é o que " +
       "verificar_citacao_trf1 usa antes de ir ao portal de novo. Cada citação termina em '— verificação: " +
       "<nível>' (só ementa/índice · inteiro teor lido · inteiro teor lido EM PARTE quando cortado pelo " +
-      "orçamento de caracteres — nunca promova EM PARTE a pleno).",
+      "orçamento de caracteres — nunca promova EM PARTE a pleno). " +
+      "Na TNU, quando a ementa ou o dispositivo do portal estão CONTIDOS letra a letra no inteiro teor exibido (só espaços e o destaque «» são " +
+      "normalizados), o texto não é repetido: no lugar vai \"texto idêntico a trecho do inteiro teor abaixo\", com o começo do trecho. Se o inteiro " +
+      "teor é cortado pelo orçamento e o trecho cai na parte não exibida, o texto sai por inteiro. O recibo em disco guarda sempre o texto completo.",
     inputSchema: {
       numero: z.string().describe("Número do processo (CNJ), com ou sem pontuação."),
       base: z.enum(["trf1", "tnu", "colegiado"]).optional().describe("Padrão 'trf1' — a mesma em que o documento foi achado."),
+      modo: z.enum(["completo", "triagem"]).optional().describe(
+        "'completo' (padrão) ou 'triagem'. A triagem é a leitura barata para decidir se vale ler o julgado por inteiro: UM bloco por julgamento " +
+          "(mesma data) com o resultado declarado no dispositivo, a votação declarada, as peças com id e link, a citação, o início do dispositivo, " +
+          "a TESE DA EMENTA, os FATOS DO JULGADO (TNU, trecho literal) e os sinais (Cita: Súmula/Tema/IRDR…), SEM a ementa nem o inteiro teor " +
+          "(nos recibos locais medidos: 13% do tamanho do modo completo nos acórdãos da TNU com inteiro teor e 27% na base trf1). É indício para " +
+          "escolher o que ler: para pôr trecho entre aspas use o modo completo ou verificar_citacao_trf1. Os recibos são gravados nos dois modos."),
     },
   },
-  async (a) => texto(await tool("obter_decisao_trf1", (x) => obterDecisao(x.numero, x.base))(a))
+  async (a) => texto(await tool("obter_decisao_trf1", (x) => obterDecisao(x.numero, x.base, x.modo))(a))
 );
 
 server.registerTool(
@@ -193,12 +209,18 @@ server.registerTool(
   {
     title: "Buscar nos recibos locais (sem rede)",
     description:
-      "Busca, SEM REDE, nos recibos que obter_decisao_trf1 já gravou nesta máquina (~/.trf1-jurisprudencia-recibos). " +
+      "Busca, SEM REDE, nos recibos que a busca e obter_decisao_trf1 já gravaram nesta máquina (~/.trf1-jurisprudencia-recibos). " +
       "Serve para reencontrar o que já foi lido (ementa, dispositivo e, na TNU, o inteiro teor) sem gastar requisição nem cota do portal: " +
       "por palavras (`consulta`, todas devem aparecer), por sinônimos (`grupos`: cada grupo é OU, os grupos se somam em E; `$` no fim = radical), " +
       "por processo (`nr_processo`, número ou início dele), por `id_documento`, por `relator` ou por `base` (\"trf1\", \"tnu\", \"colegiado\"). " +
-      "Ordena por relevância. NÃO é pesquisa no acervo do CJF: zero resultado aqui NUNCA é \"não localizado\" — para isso, buscar_jurisprudencia_trf1. " +
-      "Recibo editado à mão (sha256 não confere) é posto de lado e não aparece. Falha de parâmetro sai como \"BUSCA LOCAL NÃO REALIZADA\".",
+      "Ordena por relevância. Os recibos vêm de obter_decisao_trf1 (origem \"decisão\") e da própria buscar_jurisprudencia_trf1 (origem \"busca\": só o que a " +
+      "lista trouxe, na TNU sem inteiro teor). Consulta em linguagem natural: com 3 ou mais palavras e NENHUM recibo com todas elas (o E de todas as " +
+      "palavras de um relato de fatos quase sempre dá zero), devolve os recibos com MAIS delas, por ranking BM25 sobre a ementa (palavras e pares de " +
+      "palavras vizinhas), e avisa que mudou de modo. Em 20 consultas de teste o julgado certo ficou no top 10 em 19 e no top 3 em 18 (corpus pequeno, " +
+      "consultas escritas por quem conhecia a ementa: indício). Não vale com `grupos`, `nr_processo` nem `id_documento`. " +
+      "NÃO é pesquisa no acervo do CJF: zero resultado aqui NUNCA é \"não localizado\" — para isso, buscar_jurisprudencia_trf1. " +
+      "Recibo editado à mão (sha256 não confere) é posto de lado e não aparece. Cada recibo sai com a origem (busca ou decisão). " +
+      "Falha de parâmetro sai como \"BUSCA LOCAL NÃO REALIZADA\".",
     inputSchema: {
       consulta: z.string().default("").describe("Palavras que devem aparecer todas."),
       grupos: z.array(z.array(z.string())).optional().describe("Grupos de sinônimos (OU dentro do grupo, E entre grupos); `$` no fim = radical."),
@@ -243,10 +265,20 @@ server.registerTool(
       "Mostra por que as buscas do TRF1/TNU podem estar falhando: nível atual do limite de ritmo, orçamento " +
       "consumido, se há bloqueio em curso (e quanto falta para liberar), versão instalada, modo do " +
       "User-Agent e recibos gravados em disco. USE ISTO antes de concluir que 'o portal está fora do ar'. " +
-      "Não faz nenhuma requisição.",
-    inputSchema: {},
+      "Não faz nenhuma requisição. Com `relatorio=true` acrescenta o relatório do LIVRO-RAZÃO de requisições (~/.trf1-jurisprudencia-ritmo.jsonl, " +
+      "últimas 3.000 linhas, compartilhado com o servidor Python): taxa de falha por faixa de intervalo entre requisições, contagem por desfecho " +
+      "(ok, bloqueio, desafio, http_NNN, timeout, rede) e por origem (py/node), maior rajada em 60 s sem falha e uma recomendação. O livro-razão " +
+      "guarda só horário, operação, origem e desfecho, nunca texto de busca, parte, relator nem número de processo. A recomendação NÃO altera " +
+      "parâmetro nenhum e, com menos de 100 requisições registradas, manda manter o ritmo atual.",
+    inputSchema: {
+      relatorio: z.boolean().optional().describe("true para incluir o relatório do livro-razão."),
+    },
   },
-  async () => ({ content: [{ type: "text", text: await comAvisos(diagnosticoRitmoTexto()) }] })
+  async (a) => {
+    let t;
+    try { t = diagnosticoRitmoTexto() + (a?.relatorio ? "\n\n" + relatorioDeRitmo() : ""); } catch (e) { t = carimboNaoRealizada(`diagnóstico falhou (${e.name}: ${e.message})`); }
+    return { content: [{ type: "text", text: await comAvisos(t) }] };
+  }
 );
 
 const transport = new StdioServerTransport();

@@ -131,15 +131,70 @@ export function trechoCentrado(bruto, limite = 800) {
 }
 export const semDestaque = (t) => (t || "").replaceAll("«", "").replaceAll("»", "");
 
-const ENTIDADES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", aacute: "á", eacute: "é",
-  iacute: "í", oacute: "ó", uacute: "ú", atilde: "ã", otilde: "õ", ccedil: "ç", Aacute: "Á", Eacute: "É",
-  Iacute: "Í", Oacute: "Ó", Uacute: "Ú", Atilde: "Ã", Otilde: "Õ", Ccedil: "Ç", acirc: "â", ecirc: "ê",
-  ocirc: "ô", ordf: "ª", ordm: "º", deg: "°", sect: "§" };
+// Auxiliares de paridade com o Python (v1.6.0): contagem em PONTOS DE CÓDIGO (len/fatia de str), strip() e round() do Python, repr() de str.
+export const cpLen = (s) => { s = s ?? ""; let n = s.length; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) { const d = s.charCodeAt(i + 1); if (d >= 0xdc00 && d <= 0xdfff) { n--; i++; } } } return n; };
+export const cpSlice = (s, n) => { s = s ?? ""; return s.length <= n ? s : Array.from(s).slice(0, n).join(""); };
+const PY_ESPACOS = "\\t-\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+const RE_PY_STRIP = new RegExp(`^[${PY_ESPACOS}]+|[${PY_ESPACOS}]+$`, "g");
+export const pyStrip = (s) => (s ?? "").replace(RE_PY_STRIP, "");
+export function pyRound(x) {   // round() do Python 3: metade para o par
+  const f = Math.floor(x), d = x - f;
+  return d < 0.5 ? f : d > 0.5 ? f + 1 : (f % 2 === 0 ? f : f + 1);
+}
+export function pyRepr(s) {   // repr() de str
+  s = String(s);
+  const aspas = s.includes("'") && !s.includes('"') ? '"' : "'";
+  let o = "";
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (ch === "\\") o += "\\\\";
+    else if (ch === aspas) o += "\\" + ch;
+    else if (ch === "\n") o += "\\n";
+    else if (ch === "\r") o += "\\r";
+    else if (ch === "\t") o += "\\t";
+    else if (c < 0x20 || c === 0x7f) o += "\\x" + c.toString(16).padStart(2, "0");
+    else o += ch;
+  }
+  return aspas + o + aspas;
+}
+
+// Entidades HTML nomeadas (o Python usa html.unescape, que as conhece todas): Latin-1 completo + pontuação tipográfica. O colegiado do CJF
+// usa &ndash; &ldquo; &rdquo; &hellip;, que o conjunto antigo (14 letras acentuadas) deixava no texto do recibo.
+const ENTIDADES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  ndash: "\u2013", mdash: "\u2014", lsquo: "\u2018", rsquo: "\u2019", sbquo: "\u201a", ldquo: "\u201c", rdquo: "\u201d", bdquo: "\u201e",
+  hellip: "\u2026", bull: "\u2022", dagger: "\u2020", permil: "\u2030", lsaquo: "\u2039", rsaquo: "\u203a", euro: "\u20ac", trade: "\u2122",
+  larr: "\u2190", rarr: "\u2192", ensp: "\u2002", emsp: "\u2003", thinsp: "\u2009" };
+("nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo " +
+  "frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve " +
+  "Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute " +
+  "ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml").split(" ")
+  .forEach((nome, i) => { ENTIDADES[nome] = String.fromCharCode(160 + i); });
+const CP1252_C1 = { 0x80: 0x20ac, 0x82: 0x201a, 0x83: 0x192, 0x84: 0x201e, 0x85: 0x2026, 0x86: 0x2020, 0x87: 0x2021, 0x88: 0x2c6, 0x89: 0x2030, 0x8a: 0x160, 0x8b: 0x2039,
+  0x8c: 0x152, 0x8e: 0x17d, 0x91: 0x2018, 0x92: 0x2019, 0x93: 0x201c, 0x94: 0x201d, 0x95: 0x2022, 0x96: 0x2013, 0x97: 0x2014, 0x98: 0x2dc, 0x99: 0x2122, 0x9a: 0x161,
+  0x9b: 0x203a, 0x9c: 0x153, 0x9e: 0x17e, 0x9f: 0x178, 0x81: 0x81, 0x8d: 0x8d, 0x8f: 0x8f, 0x90: 0x90, 0x9d: 0x9d };
+function codigoNumerico(n) {   // como html.unescape: inválido -> U+FFFD; 0x80-0x9F lidos como cp1252
+  if (n === 0 || (n >= 0xd800 && n <= 0xdfff) || n > 0x10ffff) return "\ufffd";
+  if (n in CP1252_C1) return String.fromCodePoint(CP1252_C1[n]);
+  if ((n >= 0x1 && n <= 0x8) || (n >= 0xe && n <= 0x1f) || (n >= 0x7f && n <= 0x9f) || (n >= 0xfdd0 && n <= 0xfdef) || n === 0xb || (n & 0xfffe) === 0xfffe) return "";
+  return String.fromCodePoint(n);
+}
+// nomes que o html5 aceita SEM ponto e vírgula (os 96 do Latin-1 + amp lt gt quot e as formas em maiúsculas)
+const LEGACY = new Set([...Object.keys(ENTIDADES).filter((k) => ENTIDADES[k].length === 1 && ENTIDADES[k].charCodeAt(0) >= 160 && ENTIDADES[k].charCodeAt(0) <= 255),
+  "amp", "lt", "gt", "quot", "AMP", "LT", "GT", "QUOT", "COPY", "REG"]);
+Object.assign(ENTIDADES, { AMP: "&", LT: "<", GT: ">", QUOT: '"', COPY: "\u00a9", REG: "\u00ae" });
+const html5 = (k) => (k.endsWith(";") ? (Object.hasOwn(ENTIDADES, k.slice(0, -1)) ? ENTIDADES[k.slice(0, -1)] : undefined) : (LEGACY.has(k) ? ENTIDADES[k] : undefined));
+/** html.unescape do Python (uma passada só, referência numérica com ou sem ";", nome legado sem ";" e prefixo legado). */
 export function decodeEntities(t) {
-  return (t || "")
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
-    .replace(/&([a-zA-Z]+);/g, (m, nome) => (nome in ENTIDADES ? ENTIDADES[nome] : m));
+  return (t || "").replace(/&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)/g, (m, s) => {
+    if (s[0] === "#") return codigoNumerico(/^#[xX]/.test(s) ? parseInt(s.slice(2).replace(/;$/, ""), 16) : parseInt(s.slice(1).replace(/;$/, ""), 10));
+    const direto = html5(s);
+    if (direto !== undefined) return direto;
+    for (let x = s.length - 1; x > 1; x--) {
+      const pref = html5(s.slice(0, x));
+      if (pref !== undefined) return pref + s.slice(x);
+    }
+    return "&" + s;
+  });
 }
 
 export const dataIso = (br) => {
@@ -970,10 +1025,12 @@ const arqRecibo = (ident, env = process.env) => path.join(DIR_RECIBOS(env), (ide
 export { arqRecibo };
 
 function textoDeCustodia(d) {
-  return [d.ementa, d.decisao, d.inteiro_teor_texto || d.inteiro_teor_embutido].filter(Boolean).join("\n\n");
+  // v1.6.0: sem o destaque «» do portal (ele marca o termo pesquisado na lista; recibo de busca e de decisão têm de ter o MESMO texto)
+  return [semDestaque(d.ementa || ""), semDestaque(d.decisao || ""), d.inteiro_teor_texto || d.inteiro_teor_embutido].filter(Boolean).join("\n\n");
 }
 
-export function camposDeCustodia(d) {
+/** `origem`: "decisao" (obter_decisao/verificar_citacao leram o número inteiro) ou "busca" (só o que a lista trouxe). */
+export function camposDeCustodia(d, origem = "decisao") {
   const texto = textoDeCustodia(d);
   const it = d.inteiro_teor_texto || d.inteiro_teor_embutido || "";
   let transcritos = [], divergente = "";
@@ -984,6 +1041,7 @@ export function camposDeCustodia(d) {
     divergente = div ? it.slice(bruto(it, tn, div[0])) : "";
   }
   return {
+    origem,
     id_documento: String(d.id || ""),
     nr_processo: d.numero_digitos || soDigitos(d.numero || ""),
     numero: d.numero || "",
@@ -995,7 +1053,7 @@ export function camposDeCustodia(d) {
     orgao: d.orgao_fecho || d.orgao || "", orgao_fonte: orgaoFonte(d),
     relator: d.relator || "", relator_texto: d.relator_acordao_texto || d.relator_texto || "",
     url: d.link_inteiro_teor || "",
-    texto, ementa: d.ementa || "", dispositivo: d.decisao || "",
+    texto, ementa: semDestaque(d.ementa || ""), dispositivo: semDestaque(d.decisao || ""),
     inteiro_teor_incluido: Boolean(it),
     inteiro_teor: it,
     trechos_transcritos: transcritos, trecho_divergente: divergente, trechos_obiter: it ? trechosObiter(it) : [],
@@ -1006,21 +1064,126 @@ export function camposDeCustodia(d) {
   };
 }
 
+/** Recibo de DECISÃO (0600, escrita atômica; origem "decisao"): vem de obter_decisao_trf1 ou da verificação, que leram o número inteiro no
+ *  portal. SOBRESCREVE e promove o recibo de busca do mesmo id. Falha é silenciosa. Devolve o caminho ou "". */
 export function gravarRecibo(d, env = process.env) {
   try {
     if (!d.id || !textoDeCustodia(d)) return "";
     const dir = DIR_RECIBOS(env);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     try { fs.chmodSync(dir, 0o700); } catch { /* melhor esforço */ }
-    const rec = camposDeCustodia(d);
+    const rec = camposDeCustodia(d, "decisao");
     const caminho = arqRecibo(rec.id_documento, env);
-    const tmp = `${caminho}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(rec), { mode: 0o600 });
-    fs.renameSync(tmp, caminho);
+    escreverJsonAtomico(caminho, rec);
+    desindexarBusca(dir, [rec.id_documento]);
     return caminho;
   } catch {
     return "";
   }
+}
+
+function escreverJsonAtomico(caminho, obj) {
+  const tmp = `${caminho}.${process.pid}.tmp`;
+  const bruto = JSON.stringify(obj);
+  fs.writeFileSync(tmp, bruto, { mode: 0o600 });
+  fs.renameSync(tmp, caminho);
+  return Buffer.byteLength(bruto, "utf-8");
+}
+
+// --- Recibo gravado pela própria busca (porte do TJRO v1.31.0, H01) ---
+// A lista da busca já traz ementa e dispositivo (e, no colegiado, o inteiro teor embutido) INTEGRAIS: guardá-los evita reabrir o número só para citar.
+// Salvaguardas: (a) a busca NUNCA sobrescreve recibo existente; o de decisão promove o de busca; (b) acima de TRF1_MCP_RECIBOS_BUSCA_MAX_MB
+// (padrão 300) saem os recibos de busca MAIS ANTIGOS, nunca os de decisão; (c) na TNU o recibo de busca NÃO tem o inteiro teor (a lista não o
+// traz) e quem verifica citação vai ao portal; (d) o recibo de busca não prova que o processo esteja completo.
+export const INDICE_BUSCA = ".busca-indice.json";   // {id: [bytes, instante_ms]} dos recibos de origem "busca"; mesmo nome do TJRO
+export const RECIBOS_BUSCA_MAX_MB_PADRAO = 300;
+
+export function recibosBuscaMaxBytes(env = process.env) {
+  let mb = Number(env.TRF1_MCP_RECIBOS_BUSCA_MAX_MB || RECIBOS_BUSCA_MAX_MB_PADRAO);
+  if (!Number.isFinite(mb)) mb = RECIBOS_BUSCA_MAX_MB_PADRAO;
+  return Math.trunc(Math.max(10, mb || RECIBOS_BUSCA_MAX_MB_PADRAO) * 1024 * 1024);
+}
+
+export function lerIndiceBusca(pasta) {
+  try {
+    const d = JSON.parse(fs.readFileSync(path.join(pasta, INDICE_BUSCA), "utf-8"));
+    return d && typeof d === "object" && !Array.isArray(d) ? d : {};
+  } catch {
+    return {};
+  }
+}
+
+export function gravarIndiceBusca(pasta, idx) {
+  escreverJsonAtomico(path.join(pasta, INDICE_BUSCA), idx);
+}
+
+/** Recibo de decisão promove o de busca: o id sai do índice de poda (e nunca mais é podado). */
+function desindexarBusca(pasta, ids) {
+  try {
+    const idx = lerIndiceBusca(pasta);
+    if (ids.some((i) => Object.hasOwn(idx, i))) {
+      for (const i of ids) delete idx[i];
+      gravarIndiceBusca(pasta, idx);
+    }
+  } catch { /* melhor esforço */ }
+}
+
+const bytesDoIndice = (v) => Math.trunc(Number((v || [0])[0] || 0)) || 0;
+
+/** Acima do teto saem os recibos de BUSCA mais antigos, até 80% do teto; nunca os de decisão (nem o arquivo que, apesar do índice, não
+ *  traga origem "busca"). Devolve quantos removeu. */
+export function podarRecibosDeBusca(pasta = null, maxBytes = null, env = process.env) {
+  let removidos = 0;
+  try {
+    pasta = pasta || DIR_RECIBOS(env);
+    const teto = maxBytes !== null && maxBytes !== undefined ? maxBytes : recibosBuscaMaxBytes(env);
+    const idx = lerIndiceBusca(pasta);
+    let total = Object.values(idx).reduce((acc, v) => acc + bytesDoIndice(v), 0);
+    if (total <= teto) return 0;
+    const instante = (v) => (v || [0, 0])[1] || 0;
+    for (const [ident, v] of Object.entries(idx).sort((a, b) => instante(a[1]) - instante(b[1]))) {
+      if (total <= teto * 0.8) break;
+      const cam = path.join(pasta, String(ident).replace(/[^A-Za-z0-9]/g, "") + ".json");
+      try {
+        const r = JSON.parse(fs.readFileSync(cam, "utf-8"));
+        if (r && typeof r === "object" && !Array.isArray(r) && r.origem === "busca") {
+          fs.unlinkSync(cam);
+          removidos++;
+        }
+      } catch { /* já removido ou ilegível */ }
+      total -= bytesDoIndice(v);
+      delete idx[ident];
+    }
+    gravarIndiceBusca(pasta, idx);
+  } catch { /* melhor esforço */ }
+  return removidos;
+}
+
+/** Guarda, como recibo origem "busca", os documentos da página que a busca trouxe. NUNCA sobrescreve um recibo existente (de busca ou de
+ *  decisão). Tira o destaque «» do portal (o texto fica igual ao que obter_decisao grava). Falha é silenciosa. Devolve quantos gravou. */
+export function gravarRecibosDaBusca(docs, pasta = null, env = process.env) {
+  let n = 0;
+  try {
+    pasta = pasta || DIR_RECIBOS(env);
+    fs.mkdirSync(pasta, { recursive: true, mode: 0o700 });
+    try { fs.chmodSync(pasta, 0o700); } catch { /* melhor esforço */ }
+    const novos = {};
+    for (const d of docs || []) {
+      if (!d.id || !textoDeCustodia(d)) continue;
+      const alvo = path.join(pasta, String(d.id).replace(/[^A-Za-z0-9]/g, "") + ".json");
+      if (fs.existsSync(alvo) || fs.existsSync(alvo + ".inconsistente")) continue;
+      const rec = camposDeCustodia(d, "busca");
+      novos[rec.id_documento] = [escreverJsonAtomico(alvo, rec), Date.now()];
+      n++;
+    }
+    if (n) {
+      const idx = lerIndiceBusca(pasta);
+      Object.assign(idx, novos);
+      gravarIndiceBusca(pasta, idx);
+      podarRecibosDeBusca(pasta, null, env);
+    }
+  } catch { /* melhor esforço */ }
+  return n;
 }
 
 export function lerRecibo(ident, env = process.env) {
@@ -1062,7 +1225,7 @@ export function docDeRecibo(rec, env = process.env) {
     ementa: rec.ementa || "", decisao: rec.dispositivo || "",
     inteiro_teor_texto: rec.inteiro_teor || "",
     link_inteiro_teor: url, link_tipo: url.includes("eproctnu") ? "tnu" : url.includes("arquivo.trf1") ? "arquivo" : url.includes("pje") ? "pje" : "",
-    campos: {}, recibo: arqRecibo(rec.id_documento, env),
+    campos: {}, recibo: arqRecibo(rec.id_documento, env), origem_recibo: rec.origem || "decisao",
   };
 }
 
@@ -1360,7 +1523,31 @@ export function formatBusca(docs, total, meta) {
   return linhas.join("\n");
 }
 
-export function formatDecisao(docs, numero, total) {
+// --- Inteiro teor sem repetição (porte do TJRO v1.29.0, H04; só TNU) ---
+// Na TNU o portal entrega a ementa e o dispositivo e o eproc entrega o inteiro teor, que traz a ementa e o acórdão de novo. Quando o texto do
+// portal está CONTIDO letra a letra no inteiro teor exibido (só espaços e o destaque «» são normalizados; nunca similaridade), ele vira um ponteiro.
+// Se o inteiro teor é cortado pelo orçamento e o trecho cai na parte não exibida, NÃO se substitui. Texto curto não vira ponteiro (seria maior).
+export const SEM_REPETICAO_MIN_CHARS = 150;
+export const SEM_REPETICAO_ANCORA = 40;
+const RE_ESPACOS_PY = /[ \t\n\r\f\v]+/g;   // só ASCII, como o Python (não colapsa NBSP)
+
+export function compacto(t) {
+  return pyStrip(semDestaque(t || "").replace(RE_ESPACOS_PY, " "));
+}
+
+/** Ponteiro no lugar de `texto` se ele está contido, exato, no inteiro teor exibido; senão "". Tamanhos em pontos de código, como o Python. */
+export function ponteiroContido(texto, itExibidoCompacto, rotulo) {
+  const c = compacto(texto);
+  const n = cpLen(c);
+  if (n < SEM_REPETICAO_MIN_CHARS || !itExibidoCompacto.includes(c)) return "";
+  const ptr = `[${rotulo}: texto idêntico a trecho do inteiro teor abaixo (${n} caracteres); começa em «${cpSlice(c, SEM_REPETICAO_ANCORA)}…»]`;
+  return cpLen(ptr) < n ? ptr : "";   // só troca quando o ponteiro é menor que o texto
+}
+
+/** s[:n].rsplit(" ", 1)[0] do Python (com o espaço na posição 0 devolve ""). */
+const corteNoEspaco = (s) => { const i = s.lastIndexOf(" "); return i >= 0 ? s.slice(0, i) : s; };
+
+export function formatDecisao(docs, numero, total, semRepeticao = true) {
   if (!docs.length) {
     return `Nenhum documento publicado no portal do CJF/TRF1 sob o número ${numero}. Confira o número (com ou sem pontuação); decisões muito recentes ou de 1º grau não estão na base.`;
   }
@@ -1374,7 +1561,16 @@ export function formatDecisao(docs, numero, total) {
   for (const d of docs) {
     const it = d.inteiro_teor_texto || d.inteiro_teor_embutido || "";
     let em = d.ementa || "—";
-    const cortado = em.length > orcamentoPorDoc || it.length > orcamentoPorDoc;
+    // inteiro teor como será exibido (cortado no orçamento, se for o caso) e o que dele repete a ementa e o dispositivo do portal
+    const itCortado = cpLen(it) > orcamentoPorDoc;
+    const itExibido = itCortado ? corteNoEspaco(cpSlice(it, orcamentoPorDoc)) : it;
+    let ptrEm = "", ptrDec = "";
+    if (semRepeticao && d.inteiro_teor_texto) {
+      const ic = compacto(itExibido);
+      ptrEm = ponteiroContido(d.ementa || "", ic, "Ementa");
+      ptrDec = ponteiroContido(d.decisao || "", ic, "Dispositivo");
+    }
+    const cortado = (cpLen(em) > orcamentoPorDoc && !ptrEm) || itCortado;
     const nivel = nivelVerificacao(d, cortado);
     linhas.push(`\n### ${d.tipo || "Documento"} · id ${d.id} · julgado em ${d.data_fecho || d.data_julgamento || "?"}`);
     linhas.push(`Citação: ${citacaoComLink(d)} — verificação: ${nivel}`);
@@ -1387,19 +1583,17 @@ export function formatDecisao(docs, numero, total) {
     for (const sl of linhasDeSinais(d)) linhas.push(`  ${sl}`);
     const lf = linhaFatos(d);
     if (lf) linhas.push(`  ${lf}`);
-    if (em.length > orcamentoPorDoc) {
-      const cortadoTxt = em.slice(0, orcamentoPorDoc);
-      const i = cortadoTxt.lastIndexOf(" ");
-      em = (i > 0 ? cortadoTxt.slice(0, i) : cortadoTxt) + "… [CORTADO pelo orçamento de caracteres — o recibo em disco tem o texto inteiro]";
+    if (ptrEm) {
+      em = ptrEm;
+    } else if (cpLen(em) > orcamentoPorDoc) {
+      em = corteNoEspaco(cpSlice(em, orcamentoPorDoc)) + "… [CORTADO pelo orçamento de caracteres — o recibo em disco tem o texto inteiro]";
     }
     linhas.push(`\n**Ementa (integral, literal do portal):**\n${em}`);
-    linhas.push(`\n**Dispositivo (campo "Decisão", literal):**\n${d.decisao || "— (não informado pelo portal)"}`);
+    linhas.push(`\n**Dispositivo (campo "Decisão", literal):**\n${ptrDec || d.decisao || "— (não informado pelo portal)"}`);
     if (it) {
       let itSaida = it;
-      if (it.length > orcamentoPorDoc) {
-        const cortadoTxt = it.slice(0, orcamentoPorDoc);
-        const i = cortadoTxt.lastIndexOf(" ");
-        itSaida = (i > 0 ? cortadoTxt.slice(0, i) : cortadoTxt) + "… [CORTADO pelo orçamento de caracteres — o recibo em disco tem o texto inteiro; verificação = EM PARTE]";
+      if (itCortado) {
+        itSaida = itExibido + "… [CORTADO pelo orçamento de caracteres — o recibo em disco tem o texto inteiro; verificação = EM PARTE]";
       }
       linhas.push(`\n**Inteiro teor (literal, ${d.inteiro_teor_texto ? "eproc da TNU" : "embutido no portal"}):**\n${itSaida}`);
     } else {
@@ -1413,6 +1607,58 @@ export function formatDecisao(docs, numero, total) {
     linhas.push('\n---\nPara a ficha de precedente: `tribunal: "TRF1"`, `id_documento` = id acima, `julgamento` em ISO, `ementa`/`dispositivo` literais (cortes com [...]), `orgao_fonte: "índice"`. O portal NÃO expõe o voto: `verificacao` fica em "só ementa/índice" — em `limites`, diga o que só o voto resolveria. "Inteiro teor lido" só depois de abrir o PDF no navegador.');
   }
   return linhas.join("\n");
+}
+
+// --- Modo triagem (porte do TJRO v1.33.0): ler barato para decidir se vale ler por inteiro ---
+export const TRIAGEM_DISPOSITIVO_MAX = 300;
+export const MODOS_DECISAO = ["completo", "triagem"];
+
+/** Um bloco por JULGAMENTO (mesma data): resultado declarado, votação, peças com id e link, citação, início do dispositivo, tese da ementa,
+ *  fatos do julgado (TNU) e sinais (Cita: …), SEM o texto da ementa nem do inteiro teor. Indício para escolher o que ler; para aspas vale o
+ *  modo completo ou verificar_citacao_trf1. */
+export function formatTriagem(docs, numero, total) {
+  if (!docs.length) return formatDecisao([], numero, total);
+  const grupos = new Map();
+  for (const d of docs) {
+    const chave = d.data_fecho || d.data_julgamento || `sem data (id ${d.id})`;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(d);
+  }
+  const ordenados = [...grupos.entries()].sort((a, b) => { const x = dataIso(a[0]), y = dataIso(b[0]); return x < y ? 1 : x > y ? -1 : 0; });
+  const out = [`**Triagem do número ${docs[0].numero || numero}** (${ordenados.length} julgamento(s), ${docs.length} documento(s)` +
+    (total > docs.length ? `; o portal informa ${total}, mostrando os primeiros` : "") +
+    "). Modo triagem: resultado, tese, fatos e sinais, SEM a ementa nem o inteiro teor. Para ler, chame de novo sem `modo`; " +
+    "para pôr trecho entre aspas, use o modo completo ou `verificar_citacao_trf1`. Indício para decidir o que ler, não citação."];
+  for (const [data, ds] of ordenados) {
+    const rep = ds.find((x) => fold(x.tipo || "").includes("acordao")) || ds[0];
+    const conj = new Set();
+    let emb = false;
+    for (const x of ds) {
+      const [c_, e_] = resultadoComEmbargos(x.decisao || "", x.classe || "");
+      for (const k of c_) conj.add(k);
+      emb = emb || e_;
+    }
+    const res = rotuloDocumento(conj, emb);
+    const orgao = rep.orgao_fecho || rep.orgao || "órgão não informado";
+    const linhas = [`### ${data} · Rel. ${rep.relator || "—"} · ${orgao} (${orgaoFonte(rep).split(" — ")[0]}) · ${rep.classe || rep.tipo || ""}`.replace(/[ ·]+$/, ""),
+      `- Resultado declarado: ${res} (lido do dispositivo)`];
+    const vot = votacaoDoDocumento(rep);
+    if (vot) linhas.push(`- Votação declarada: ${vot}`);
+    linhas.push("- Peças: " + ds.map((x) => `${x.tipo || "documento"} id ${x.id}` + (linkDocumentoEspecifico(x) ? ` (${linkDocumentoEspecifico(x)})` : "")).join(" · "));
+    const cz = ds.some((x) => x.inteiro_teor_texto || x.inteiro_teor_embutido);
+    linhas.push(`- Citação: ${citacaoComLink(rep)} — verificação: ${nivelVerificacao(rep)}`);
+    if (rep.decisao) linhas.push(`- Dispositivo (início, literal): «${trechoCentrado(rep.decisao, TRIAGEM_DISPOSITIVO_MAX)}»`);
+    const te = teseDaEmenta(rep.ementa || "");
+    if (te) linhas.push("- " + linhaTese(te));
+    const lf = linhaFatos(ds.find((x) => x.inteiro_teor_texto) || rep);
+    if (lf) linhas.push("- " + lf);
+    for (const sl of linhasDeSinais(rep)) linhas.push(`- ${sl}`);
+    if (ds.length > 1) for (const av of avisosOpostos(ds)) linhas.push(`- ${av}`);
+    if (!cz) linhas.push("- Sem inteiro teor nesta base: o voto não é exposto pelo portal.");
+    out.push(linhas.join("\n"));
+  }
+  for (const av of avisosEntreJulgamentos(docs)) out.push(av);
+  return out.join("\n\n");
 }
 
 // ------------------------------------------------------------- verificação de trecho ---
@@ -1681,8 +1927,9 @@ export function diagnosticoRitmo(agora = Date.now()) {
   const e = comTrava(() => lerEstadoDisjuntor());
   const janela = ESCADA_JANELA_MS[e.indiceJanela];
   const naJanela = e.requisicoes.filter((t) => agora - t <= janela).length;
-  let nRec = 0;
-  try { nRec = fs.readdirSync(DIR_RECIBOS()).filter((f) => f.endsWith(".json")).length; } catch { /* pasta pode não existir */ }
+  let nRec = 0, nBusca = 0;
+  try { nRec = fs.readdirSync(DIR_RECIBOS()).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length; } catch { /* pasta pode não existir */ }
+  try { if (fs.statSync(DIR_RECIBOS()).isDirectory()) nBusca = Object.keys(lerIndiceBusca(DIR_RECIBOS())).length; } catch { /* pasta pode não existir */ }
   const linhas = [
     `**Controle de ritmo do MCP TRF1 (portal do CJF) — v${VERSAO}**`,
     `- Nível atual: ${e.indiceJanela + 1} de ${ESCADA_JANELA_MS.length} (limite: ${JANELA_MAX_REQS} requisições a cada ${fmtHms(janela)}; cada busca gasta 2 a 4)`,
@@ -1692,7 +1939,7 @@ export function diagnosticoRitmo(agora = Date.now()) {
       ? `- ⚠️ EM PAUSA — liberando em ${fmtHms(e.bloqueadoAte - agora)}` + (e.motivoPausa ? ` (${e.motivoPausa})` : "")
       : "- Situação: liberado",
     `- User-Agent: ${process.env.TRF1_USER_AGENT ? "definido por TRF1_USER_AGENT" : "padrão (identificado)"}`,
-    `- Recibos gravados em ${DIR_RECIBOS()}: ${nRec}`,
+    `- Recibos gravados em ${DIR_RECIBOS()}: ${nRec}` + (nBusca ? ` (${nBusca} de busca, sujeitos ao teto de ${Math.floor(recibosBuscaMaxBytes() / (1024 * 1024))} MB; os demais, de decisão)` : ""),
   ];
   if (persistenciaIndisponivel) {
     linhas.splice(1, 0, `- ⚠️ AVISO: falha ao usar ${arquivoEstadoDisjuntor} (${persistenciaIndisponivel}) — enquanto isso a reserva de requisição é RECUSADA (fail-closed): verifique permissão e espaço em disco.`);
@@ -1719,6 +1966,149 @@ export function diagnosticoRitmo(agora = Date.now()) {
     linhas.push("As recusas vieram após rajadas — preferir uma busca ampla a várias seguidas é o que mais ajuda.");
   }
   return linhas.join("\n");
+}
+
+// --------------------------------------------------------------------------- //
+// Livro-razão de requisições e relatório de ritmo (porte do TJRO v1.28.0)          //
+// Cada requisição ao portal deixa UMA linha em ~/.trf1-jurisprudencia-ritmo.jsonl (0600, últimas 3.000):  //
+//   {"t": instante em ms, "impl": "py"|"node", "pid": n, "id": "honesta"|"personalizada", "op": "busca"|"decisao"|…,  //
+//    "res": "ok"|"bloqueio"|"desafio"|"http_NNN"|"timeout"|"rede"|"sessao"|"inesperada", "status": http|null, "durMs": n|null}  //
+// NUNCA texto de busca, parte, relator nem número de processo. A extensão Python escreve no MESMO arquivo e formato (o campo `impl` as distingue). //
+// Com ele se mede a taxa de falha por faixa de intervalo e a maior rajada sem falha. O relatório recomenda; nada é alterado automaticamente. //
+// --------------------------------------------------------------------------- //
+export const ARQUIVO_RITMO = (env = process.env) => env.TRF1_MCP_ARQUIVO_RITMO || path.join(os.homedir(), ".trf1-jurisprudencia-ritmo.jsonl");
+const RITMO_MAX_LINHAS = 3000;
+const RITMO_TAMANHO_PARA_RODAR = 700_000;
+// sob `node --test` o livro-razão fica desligado (como o Python sob o selftest): teste nunca grava no arquivo real
+let ritmoAtivo = !process.env.NODE_TEST_CONTEXT && !process.execArgv.includes("--test") && !process.argv.includes("--test");
+export function _setRitmoAtivoParaTeste(v) { const a = ritmoAtivo; ritmoAtivo = Boolean(v); return a; }
+export const RITMO_MIN_REQS_PARA_RECOMENDAR = 100;
+const FAIXAS_S = [[0.0, 1.5, "< 1,5 s"], [1.5, 3.0, "1,5–3 s"], [3.0, 5.0, "3–5 s"], [5.0, 10.0, "5–10 s"], [10.0, 30.0, "10–30 s"], [30.0, Infinity, "≥ 30 s"]];
+const RE_OP_RITMO = /^[a-z_]{1,24}$/;
+const RE_RES_RITMO = /^(?:ok|bloqueio|desafio|timeout|rede|sessao|inesperada|http_\d{3})$/;
+
+const pct = (a, b) => (b ? Math.trunc(100 * a / b + 0.5) : 0);
+const fmtS = (x) => (Number.isInteger(x) ? String(x) : x.toFixed(1).replace(".", ","));
+const identidadeNode = (env = process.env) => (env.TRF1_USER_AGENT ? "personalizada" : "honesta");
+
+/** Acrescenta uma linha ao livro-razão. Nunca lança; desligado sob o teste, salvo `arquivo` explícito. */
+export function ritmoAnotar(tMs, op, res, status = null, durMs = null, arquivo = null, env = process.env) {
+  if (arquivo === null && !ritmoAtivo) return;
+  try {
+    arquivo = arquivo || ARQUIVO_RITMO(env);
+    op = RE_OP_RITMO.test(String(op || "")) ? op : "?";
+    res = RE_RES_RITMO.test(String(res || "")) ? res : "inesperada";
+    const linha = JSON.stringify({ t: pyRound(tMs), impl: "node", pid: process.pid, id: identidadeNode(env), op, res,
+      status: status === undefined ? null : status, durMs: durMs === null || durMs === undefined ? null : pyRound(durMs) });
+    const fd = fs.openSync(arquivo, "a", 0o600);
+    try { fs.writeSync(fd, linha + "\n"); } finally { fs.closeSync(fd); }
+    if (fs.statSync(arquivo).size > RITMO_TAMANHO_PARA_RODAR) {
+      const linhas = fs.readFileSync(arquivo, "utf-8").split("\n").filter(Boolean);
+      const tmp = `${arquivo}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, linhas.slice(-RITMO_MAX_LINHAS).join("\n") + "\n", { mode: 0o600 });
+      fs.renameSync(tmp, arquivo);
+    }
+  } catch { /* o livro-razão nunca derruba uma consulta */ }
+}
+
+export function ritmoLer(arquivo = null, env = process.env) {
+  try {
+    const out = [];
+    for (const linha of fs.readFileSync(arquivo || ARQUIVO_RITMO(env), "utf-8").split("\n")) {
+      if (!linha) continue;
+      let d;
+      try { d = JSON.parse(linha); } catch { continue; }
+      if (d && typeof d === "object" && !Array.isArray(d) && typeof d.t === "number") out.push(d);
+    }
+    return out.sort((a, b) => a.t - b.t);
+  } catch {
+    return [];
+  }
+}
+
+const ehFalhaRitmo = (r) => String(r.res || "") !== "ok";
+
+/** Taxa de falha por faixa de intervalo desde a requisição anterior (qualquer origem), por desfecho e por origem, e a maior rajada em 60 s
+ *  SEM nenhuma falha dentro da janela. Falha é todo desfecho diferente de "ok". */
+export function analisarRitmo(ritmo, { espacamentoMinMs = ESPACAMENTO_MIN_MS, janelaMax = JANELA_MAX_REQS, agoraMs = null } = {}) {
+  agoraMs = agoraMs === null || agoraMs === undefined ? Date.now() : agoraMs;
+  const n = ritmo.length;
+  const faixas = FAIXAS_S.map(([a, b, nome]) => ({ nome, de: a, ate: b, reqs: 0, falhas: 0 }));
+  for (let k = 1; k < n; k++) {
+    const gap = (ritmo[k].t - ritmo[k - 1].t) / 1000;
+    const f = faixas.find((x) => x.de <= gap && gap < x.ate);
+    f.reqs += 1;
+    f.falhas += ehFalhaRitmo(ritmo[k]) ? 1 : 0;
+  }
+  const porDesfecho = new Map(), porOrigem = new Map();
+  const soma = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+  for (const r of ritmo) {
+    soma(porDesfecho, String(r.res || "?"));
+    soma(porOrigem, String(r.impl || "?"));
+  }
+  // maior janela de 60 s sem falha: duas pontas, com a falha mais recente como piso
+  let maxRajada = 0, ini = 0, ultimaFalha = -1;
+  ritmo.forEach((r, k) => {
+    if (ehFalhaRitmo(r)) { ultimaFalha = k; ini = k + 1; return; }
+    while (ini < k && r.t - ritmo[ini].t > 60_000) ini++;
+    maxRajada = Math.max(maxRajada, k - Math.max(ini, ultimaFalha + 1) + 1);
+  });
+  const inicio = n ? ritmo[0].t : null;
+  const acima = faixas.filter((f) => f.de * 1000 >= espacamentoMinMs);
+  const abaixo = faixas.filter((f) => f.ate * 1000 <= espacamentoMinMs);
+  const som = (arr, c) => arr.reduce((t, f) => t + f[c], 0);
+  return { n, falhas: ritmo.filter(ehFalhaRitmo).length, inicio,
+    diasCobertos: inicio ? Math.max(1, Math.trunc((agoraMs - inicio) / 86_400_000 + 0.5)) : 0,
+    faixas, porDesfecho, porOrigem, maxRajadaSemFalha: maxRajada,
+    reqsAcima: som(acima, "reqs"), falhasAcima: som(acima, "falhas"), reqsAbaixo: som(abaixo, "reqs"), falhasAbaixo: som(abaixo, "falhas"),
+    espacamentoMinMs, janelaMax };
+}
+
+export function recomendacaoRitmo(a) {
+  const minimo = RITMO_MIN_REQS_PARA_RECOMENDAR;
+  if (a.n < minimo) {
+    return [`Dados insuficientes: ${a.n} requisições registradas (mínimo ${minimo} para recomendar mudança).`,
+      "**Manter os parâmetros atuais.** O livro-razão acumula a cada consulta; rode este relatório de novo depois."];
+  }
+  const esp = fmtS(a.espacamentoMinMs / 1000);
+  const out = [];
+  if (a.falhasAcima === 0 && a.reqsAcima >= minimo) {
+    out.push(`Com intervalo ≥ ${esp} s: ${a.reqsAcima} requisições, **nenhuma falha**. O espaçamento mínimo atual está adequado.`);
+  } else if (a.falhasAcima > 0) {
+    out.push(`Com intervalo ≥ ${esp} s ainda houve ${a.falhasAcima} falha(s) em ${a.reqsAcima} requisições (${pct(a.falhasAcima, a.reqsAcima)}%): ` +
+      "o gatilho NÃO é só o espaçamento; veja o desfecho de cada falha (bloqueio, desafio, rede, timeout) e os incidentes do disjuntor.");
+  }
+  if (a.falhasAbaixo > 0) {
+    out.push(`Com intervalo abaixo de ${esp} s: ${a.falhasAbaixo} falha(s) em ${a.reqsAbaixo} requisições (${pct(a.falhasAbaixo, a.reqsAbaixo)}%). Não reduzir o espaçamento.`);
+  }
+  out.push(`Maior rajada em 60 s SEM falha: ${a.maxRajadaSemFalha} requisições (teto configurado: ${a.janelaMax} por janela). ` +
+    "Decisão sobre qualquer parâmetro é humana; este relatório não altera nada.");
+  return out;
+}
+
+const ordenaPares = (m) => [...m.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
+
+export function formatarRelatorioRitmo(a) {
+  const utc = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const L = ["**Relatório de ritmo do portal do CJF (livro-razão de requisições)**"];
+  L.push(`- Livro-razão: ${a.n} requisições registradas` + (a.inicio ? ` desde ${utc(a.inicio)} UTC (${a.diasCobertos} dia(s))` : "") + `; falhas (desfecho diferente de ok): ${a.falhas}.`);
+  L.push(`- Parâmetros atuais: espaçamento mínimo ${fmtS(a.espacamentoMinMs / 1000)} s; teto de ${a.janelaMax} requisições por janela.`);
+  if (a.n) {
+    L.push("- Origem das linhas: " + ordenaPares(a.porOrigem).map(([k, v]) => `${k} ${v}`).join(", ") + ".");
+    L.push("\n**Taxa de falha por intervalo desde a requisição anterior (qualquer origem, qualquer processo desta máquina):**");
+    L.push("| Intervalo | Requisições | Falhas | Taxa |");
+    L.push("|---|---|---|---|");
+    for (const f of a.faixas) L.push(`| ${f.nome} | ${f.reqs} | ${f.falhas} | ${f.reqs ? pct(f.falhas, f.reqs) + "%" : "—"} |`);
+    L.push("\n**Por desfecho:** " + [...a.porDesfecho.entries()].sort((x, y) => (y[1] - x[1]) || (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)).map(([k, v]) => `${k} ${v}`).join(", ") + ".");
+  }
+  L.push("\n**Recomendação (a partir dos dados; nada é alterado automaticamente):**");
+  for (const r of recomendacaoRitmo(a)) L.push(`- ${r}`);
+  L.push("\n_Privacidade: o livro-razão guarda só horário, operação, origem e desfecho; nunca texto de busca, partes, relatores nem números de processo._");
+  return L.join("\n");
+}
+
+export function relatorioDeRitmo(agoraSeg = null, arquivo = null, env = process.env) {
+  return formatarRelatorioRitmo(analisarRitmo(ritmoLer(arquivo, env), { agoraMs: agoraSeg === null || agoraSeg === undefined ? null : agoraSeg * 1000 }));
 }
 
 // cache de respostas idênticas por processo (não por disco): 5 min, 32 entradas
@@ -1765,7 +2155,7 @@ function diagnosticarResposta(status, ctype, texto, esperado) {
 }
 
 // Cookie jar simples por sessão (Node fetch não persiste cookies entre requisições).
-class CookieJar {
+export class CookieJar {
   constructor() { this.cookies = new Map(); }
   aplicar(headers) {
     const set = typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
@@ -1791,12 +2181,13 @@ function paresParaForm(pares) {
   return body;
 }
 
-async function requisitar(jar, metodo, url, operacao, { data, headers = {}, esperado = "html" } = {}, fetchImpl = fetch, env = process.env) {
+export async function requisitar(jar, metodo, url, operacao, { data, headers = {}, esperado = "html" } = {}, fetchImpl = fetch, env = process.env) {
   const reserva = reservarRequisicao();
   if (reserva.erro) throw new PesquisaNaoRealizada(reserva.erro);
   if (reserva.esperarMs > 0) await new Promise((r) => setTimeout(r, reserva.esperarMs));
   const h = { ...headersBase(env), ...headers };
   if (jar.cookies.size) h.Cookie = jar.cabecalho();
+  const t0Ms = Date.now();
   let r;
   try {
     r = metodo === "GET"
@@ -1804,6 +2195,7 @@ async function requisitar(jar, metodo, url, operacao, { data, headers = {}, espe
       : await fetchImpl(url, { method: "POST", headers: h, body: paresParaForm(data), signal: AbortSignal.timeout(45_000) });
   } catch (e) {
     const causa = e.cause?.code || e.cause?.message || ""; // "fetch failed" sozinho não diz se foi DNS, certificado, reset ou o portal fora
+    ritmoAnotar(t0Ms, operacao, String(e.name || "").toLowerCase().includes("timeout") ? "timeout" : "rede", null, Date.now() - t0Ms, null, env);
     throw new PesquisaNaoRealizada(`falha de rede ao consultar o portal (${e.name}: ${e.message}${causa ? ` — causa: ${String(causa).slice(0, 120)}` : ""}) — tente de novo em instantes`);
   }
   jar.aplicar(r.headers);
@@ -1820,6 +2212,7 @@ async function requisitar(jar, metodo, url, operacao, { data, headers = {}, espe
   } catch {
     texto = new TextDecoder("utf-8").decode(buf);
   }
+  const durMs = Date.now() - t0Ms;
   const env_ = envelope(texto);
   const ehDesafio = ehDesafioNavegador(env_);
   const ehBloqueio = RE_BLOQUEIO_ANTIROBO.test(env_);
@@ -1829,17 +2222,27 @@ async function requisitar(jar, metodo, url, operacao, { data, headers = {}, espe
     let esperaMinimaMs = 0;
     try { esperaMinimaMs = (Number(r.headers.get("retry-after")) || 0) * 1000; } catch { /* ok */ }
     const tipo = ehDesafio ? "desafio" : ehBloqueio ? "bloqueio" : "http";
+    ritmoAnotar(t0Ms, operacao, tipo !== "http" ? tipo : `http_${r.status}`, r.status, durMs, null, env);
     registrarBloqueioDetectado(Date.now(), operacao || operacaoReal, { subirEscada: ehBloqueio && !ehDesafio, esperaMinimaMs, tipo });
     throw new PortalRecusou(diagnosticarResposta(r.status, ctype, texto, esperado));
   }
-  if (RE_SESSAO_EXPIRADA.test(env_)) throw new SessaoInvalida(diagnosticarResposta(r.status, ctype, texto, esperado));
-  if (r.status >= 400) throw new PesquisaNaoRealizada(diagnosticarResposta(r.status, ctype, texto, esperado));
+  if (RE_SESSAO_EXPIRADA.test(env_)) {
+    ritmoAnotar(t0Ms, operacao, "sessao", r.status, durMs, null, env);
+    throw new SessaoInvalida(diagnosticarResposta(r.status, ctype, texto, esperado));
+  }
+  if (r.status >= 400) {
+    ritmoAnotar(t0Ms, operacao, `http_${r.status}`, r.status, durMs, null, env);
+    throw new PesquisaNaoRealizada(diagnosticarResposta(r.status, ctype, texto, esperado));
+  }
   if (esperado === "xml" && !texto.slice(0, 2000).includes("<partial-response")) {
+    ritmoAnotar(t0Ms, operacao, "inesperada", r.status, durMs, null, env);
     throw new PesquisaNaoRealizada(diagnosticarResposta(r.status, ctype, texto, "XML <partial-response>"));
   }
   if (esperado === "html" && !texto.includes("javax.faces.ViewState")) {
+    ritmoAnotar(t0Ms, operacao, "inesperada", r.status, durMs, null, env);
     throw new PesquisaNaoRealizada(diagnosticarResposta(r.status, ctype, texto, "a página do formulário"));
   }
+  ritmoAnotar(t0Ms, operacao, "ok", r.status, durMs, null, env);
   registrarSucesso();
   return texto;
 }
@@ -2049,6 +2452,7 @@ export async function buscar(a, fetchImpl = fetch, env = process.env) {
       throw new Error("Informe a consulta, ou grupos de termos, ou pelo menos um filtro.");
     }
     const dados = await consultarPortal(consultaMontada, tipos, fontes, pagina, porPagina, avancados, tipoData, "busca", base, tipoAcordaoV, fetchImpl, env);
+    gravarRecibosDaBusca(dados.docs, null, env);   // v1.6.0 (porte do TJRO v1.31, H01): a lista já trouxe o texto; guardar evita reabrir o número só para citar
     const meta = { consulta_montada: consultaMontada, tipos, fontes, pagina, por_pagina: porPagina, filtros: avancados,
       avisos: dados.avisos, base, tipo_acordao: tipoAcordaoV };
     return limitarSaidaBusca(formatBusca(dados.docs, dados.total, meta), SAIDA_MAX_CHARS, pagina, porPagina) + linhaDeRitmo();
@@ -2081,9 +2485,11 @@ export async function localizarPorNumero(numero, base, operacao, comInteiroTeor 
   return [{ total: dados.total, docs: dados.docs, avisos: [...(dados.avisos || []), ...avisosExtra] }, docs];
 }
 
-export async function obterDecisao(numero, base = "trf1", fetchImpl = fetch, env = process.env) {
+export async function obterDecisao(numero, base = "trf1", modo = "completo", fetchImpl = fetch, env = process.env) {
   const digitos = soDigitos(numero);
   if (digitos.length < 7) return `Número muito curto para localizar com segurança: ${JSON.stringify(numero)}.`;
+  modo = pyStrip(modo || "completo").toLowerCase();
+  if (!MODOS_DECISAO.includes(modo)) return erroDeParametro(`modo inválido: ${pyRepr(modo)}; use ${MODOS_DECISAO.map(pyRepr).join(" ou ")}`);
   let dados, docs;
   try {
     base = validarBase(base);
@@ -2098,7 +2504,8 @@ export async function obterDecisao(numero, base = "trf1", fetchImpl = fetch, env
     return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
   const gravados = docs.map((d) => gravarRecibo(d, env)).filter(Boolean);
-  let saida = formatDecisao(docs, digitos.length === 20 ? cnj(digitos) : numero, dados.total);
+  const num = digitos.length === 20 ? cnj(digitos) : numero;
+  let saida = modo === "triagem" ? formatTriagem(docs, num, dados.total) : formatDecisao(docs, num, dados.total);
   if (gravados.length) saida += `\nRecibo(s) gravado(s) em ${DIR_RECIBOS(env)} (${gravados.length}): o lint da peticao-rg e o revisor-adversarial conferem a ficha contra esse arquivo, sem nova requisição.`;
   for (const av of dados.avisos || []) saida = `⚠️ ${av}\n` + saida;
   return saida;
@@ -2108,20 +2515,38 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
   const digitos = soDigitos(numero);
   if (digitos.length < 7) return `Número muito curto para localizar com segurança: ${JSON.stringify(numero)}.`;
   if (!(trecho || "").trim()) return "Informe o trecho que pretende citar entre aspas.";
-  let origem = "portal", dados, docs;
+  let origem = "portal", dados = {}, docs = [], soBusca = false;
   try {
     base = validarBase(base);
+    // recibo local primeiro (0 requisições): o que o portal entregou da última vez, com sha256
     const recs = recibosDoProcesso(digitos, base, env);
+    // TNU: recibo sem inteiro teor (inclusive o de busca) não serve para conferir voto: vai ao portal, como se não houvesse recibo
     if (recs.length && (base !== "tnu" || recs.every((r) => r.inteiro_teor))) {
       docs = recs.map((r) => docDeRecibo(r, env));
       dados = { avisos: [], total: docs.length };
       origem = "recibo local";
-    } else {
+      // v1.6.0 (porte do TJRO v1.31): recibo gravado só pela BUSCA não prova que o processo esteja completo (a lista traz só os
+      // documentos que casaram). Se o trecho está nele, vale; se não está, a ausência NÃO se conclui: lê o número inteiro no portal.
+      if (recs.every((r) => r.origem === "busca")) {
+        const rot = BASES[base].rotulo;
+        if (docs.some((d_) => verificarTrecho({ ementa: d_.ementa || "", dispositivo: d_.decisao || "", "inteiro teor": d_.inteiro_teor_texto || "" }, trecho, rot).valido)) {
+          origem = "recibo local (de busca; o processo pode ter outros documentos)";
+        } else {
+          docs = []; soBusca = true;
+        }
+      }
+    }
+    if (!docs.length) {
       [dados, docs] = await localizarPorNumero(numero, base, "verificacao", true, fetchImpl, env);
+      origem = "portal";
       for (const d of docs) gravarRecibo(d, env);
     }
   } catch (e) {
-    if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(e.message);
+    if (e instanceof PesquisaNaoRealizada) {
+      return carimboNaoRealizada(String(e.message).trim().replace(/\.+$/, "") + (soBusca
+        ? ". Só há recibos de BUSCA para este número, e o trecho não está neles: isso não prova que esteja fora do processo, " +
+          "porque a busca traz só os documentos que casaram" : ""));
+    }
     if (e instanceof Error && /base inválida/.test(e.message)) return erroDeParametro(e);
     return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
@@ -2191,7 +2616,7 @@ export function listarRecibos(pasta = null, env = process.env) {
     if (rec && rec.id_documento) {
       const c = { ...rec };
       for (const campo of ["id_documento", "nr_processo", "numero", "base", "tipo", "classe", "orgao", "orgao_fonte", "relator", "relator_texto",
-        "data_julgamento", "obtido_em", "inteiro_teor", "ementa", "dispositivo"]) {
+        "data_julgamento", "obtido_em", "inteiro_teor", "ementa", "dispositivo", "origem"]) {
         const v = c[campo];
         c[campo] = typeof v === "string" ? v : v === null || v === undefined ? "" : String(v);
       }
@@ -2208,6 +2633,86 @@ export function trechoEmVolta(texto, tn, rx, largura = 160) {
   if (!m) return "";
   const i = tn.length === texto.length ? m.index : Math.max(0, Math.trunc(m.index * texto.length / Math.max(1, tn.length)));
   return texto.slice(Math.max(0, i - largura), i + largura).replace(/\s+/g, " ").trim();
+}
+
+// --- Consulta em linguagem natural: ranking BM25 sobre a ementa (porte do TJRO v1.37) ---
+// O E de TODAS as palavras de um relato de fatos quase sempre dá zero (o TJRO mediu zero nas 40 consultas de teste). Com 3+ palavras e zero
+// no E, devolve os recibos com MAIS delas: BM25 (k1 1,2; b 0,75) sobre a ementa, por palavra e por par de palavras vizinhas (peso 1,5).
+// Medido offline em 17/10/2026 no servidor Python: 20 consultas de relato de fatos, escritas a partir de ementas sorteadas dos 141 recibos locais;
+// o julgado de origem ficou no top 10 em 19 e no top 3 em 18. Corpus pequeno e consultas escritas por quem conhecia a ementa: indício, não validação cega.
+export const RECIBOS_BM25_MEDIDA = "em 20 consultas de teste em linguagem natural, pôs o julgado certo no top 10 em 19 e no top 3 em 18; o E de todas as palavras deu zero nas 20";
+export const BM25_MIN_PALAVRAS = 3;
+export const BM25_MIN_LETRAS = 4;
+export const BM25_EMENTA_MAX = 6000;
+export const BM25_K1 = 1.2, BM25_B = 0.75, BM25_PESO_PAR = 1.5;
+const STOP_BM25 = new Set(("para pela pelo pelos pelas como mais pois sobre entre sendo seja sejam este esta estes estas esse essa isso isto aquele aquela quando onde " +
+  "qual quais cujo cuja cujos cujas assim ainda tambem porem contudo todavia entretanto portanto logo entao apenas mesmo mesma mesmos mesmas " +
+  "outro outra outros outras cada todo toda todos todas nada tudo muito muita muitos muitas pouco pouca desde apos antes depois durante conforme " +
+  "segundo mediante perante contra atraves acerca junto face nos nas dos das uma uns umas nesse nessa neste nesta deste desta desse dessa sido " +
+  "foram sera serao seria seriam tendo haver havendo houve fica ficam ficou deve devem devendo pode podem podendo sem sob com ela ele seu sua " +
+  "seus suas foi tem ser nao que por aos").split(" "));
+const ROMANO_BM25 = /^[ivxlcdm]+$/;
+const IDX_BM25 = new Map();
+
+/** Palavras do texto, sem acento: BM25_MIN_LETRAS+ letras, só letras (sem algarismo), sem palavra de ligação e sem algarismo romano. */
+export function palavrasBm25(texto) {
+  const out = [];
+  for (const w of String(texto || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || []) {
+    const f = fold(w);
+    if (f.length < BM25_MIN_LETRAS || !/^[a-z]+$/.test(f) || STOP_BM25.has(f) || ROMANO_BM25.test(f)) continue;
+    out.push(f);
+  }
+  return out;
+}
+
+const q6 = (x) => Math.floor(x * 1e6 + 0.5);
+
+function docBm25(r) {
+  const k = `${r.id_documento}:${cpLen(r.ementa || "")}:${cpLen(r.texto || "")}`;
+  let v = IDX_BM25.get(k);
+  if (v === undefined) {
+    if (IDX_BM25.size > 20000) IDX_BM25.clear();
+    const t = palavrasBm25(cpSlice(r.ementa || r.texto || "", BM25_EMENTA_MAX));
+    const tf = new Map(), tfb = new Map();
+    for (const w of t) tf.set(w, (tf.get(w) || 0) + 1);
+    for (let i = 0; i < t.length - 1; i++) { const b = `${t[i]}_${t[i + 1]}`; tfb.set(b, (tfb.get(b) || 0) + 1); }
+    v = { len: t.length, tf, tfb };
+    IDX_BM25.set(k, v);
+  }
+  return v;
+}
+
+/** [[recibo, nota×10^6]] dos `limite` melhores por BM25 (palavras e pares vizinhos da consulta sobre a ementa). Vazio se a consulta tem
+ *  menos de BM25_MIN_PALAVRAS palavras úteis ou nenhum recibo pontua. Desempate: data de julgamento mais recente, depois id. */
+export function rankearPorConsulta(consulta, recibos, limite = 10) {
+  const q = palavrasBm25(consulta);
+  if (q.length < BM25_MIN_PALAVRAS || !recibos.length) return [];
+  const qb = []; for (let i = 0; i < q.length - 1; i++) qb.push(`${q[i]}_${q[i + 1]}`);
+  const docs = recibos.map((r) => [r, docBm25(r)]);
+  const n = docs.length;
+  const avg = docs.reduce((t, [, d]) => t + d.len, 0) / n || 1;
+  const uq = [...new Set(q)], uqb = [...new Set(qb)];
+  const df = new Map(uq.map((w) => [w, docs.filter(([, d]) => d.tf.has(w)).length]));
+  const dfb = new Map(uqb.map((w) => [w, docs.filter(([, d]) => d.tfb.has(w)).length]));
+  const peso = (f, ln) => (f * (BM25_K1 + 1)) / (f + BM25_K1 * (1 - BM25_B + (BM25_B * ln) / avg));
+  const out = [];
+  for (const [r, d] of docs) {
+    let sc = 0.0;
+    for (const w of uq) {
+      const f = d.tf.get(w);
+      if (f) sc += Math.log(1 + (n - df.get(w) + 0.5) / (df.get(w) + 0.5)) * peso(f, d.len);
+    }
+    for (const w of uqb) {
+      const f = d.tfb.get(w);
+      if (f) sc += BM25_PESO_PAR * Math.log(1 + (n - dfb.get(w) + 0.5) / (dfb.get(w) + 0.5)) * peso(f, d.len);
+    }
+    if (sc > 0) out.push([r, q6(sc)]);
+  }
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);   // sort() do JS é estável, como o do Python
+  out.sort((x, y) => cmp(String(x[0].id_documento), String(y[0].id_documento)));
+  out.sort((x, y) => cmp(dataIso(y[0].data_julgamento || ""), dataIso(x[0].data_julgamento || "")));
+  out.sort((x, y) => y[1] - x[1]);
+  return out.slice(0, limite);
 }
 
 export function buscarRecibos(a = {}, env = process.env) {
@@ -2251,15 +2756,25 @@ export function buscarRecibos(a = {}, env = process.env) {
   }
   achados.sort((x, y) => (x[1] < y[1] ? 1 : x[1] > y[1] ? -1 : 0));
   achados.sort((x, y) => y[0] - x[0]);
+  // E de todas as palavras deu zero com consulta em linguagem natural: devolve os que têm MAIS delas (ranking BM25 sobre a ementa), dizendo isso
+  let ranqueado = false;
+  if (!achados.length && !gs.length && !dig && !idDoc && palavras.length >= BM25_MIN_PALAVRAS && todos.length) {
+    for (const [r_, sc] of rankearPorConsulta(consulta, todos, lim)) achados.push([sc, dataIso(r_.data_julgamento || ""), r_]);
+    ranqueado = achados.length > 0;
+  }
   const filtroTxt = [
     dig ? `processo ${dig.length === 20 ? cnj(dig) : dig + "…"}` : "", idDoc ? `id ${idDoc}` : "",
     relN ? `relator «${String(relator).trim()}»` : "", b ? `base ${b}` : ""].filter(Boolean).join(", ");
   const termosMostrados = [...palavras, ...gs.flat()].join(", ") || "(sem termos)";
   const linhas = [
-    `**Recibos locais do TRF1/TNU — ${achados.length} de ${totalGeral} documento(s) já lidos nesta máquina atendem a «${termosMostrados}»` +
-      `${filtroTxt ? " em " + filtroTxt : ""} · ZERO requisição ao portal**`,
-    "⚠️ Isto NÃO é pesquisa no acervo do CJF: só olha o que obter_decisao_trf1 já trouxe para esta máquina. Zero aqui NUNCA é " +
-      "\"não localizado\" — para isso, buscar_jurisprudencia_trf1. Recibo da base trf1 guarda ementa e dispositivo (sem voto); o inteiro teor só existe nos da TNU.",
+    (ranqueado
+      ? `**Recibos locais do TRF1/TNU — nenhum dos ${totalGeral} documento(s) já lidos tem TODAS as palavras de «${termosMostrados}»; abaixo, os ` +
+        `${achados.length} que têm MAIS delas (ranking BM25 sobre a ementa, palavras e pares vizinhos; ${RECIBOS_BM25_MEDIDA}) · ZERO requisição ao portal**`
+      : `**Recibos locais do TRF1/TNU — ${achados.length} de ${totalGeral} documento(s) já lidos nesta máquina atendem a «${termosMostrados}»` +
+        `${filtroTxt ? " em " + filtroTxt : ""} · ZERO requisição ao portal**`),
+    "⚠️ Isto NÃO é pesquisa no acervo do CJF: só olha o que a busca e obter_decisao_trf1 já trouxeram para esta máquina. Zero aqui NUNCA é " +
+      "\"não localizado\" — para isso, buscar_jurisprudencia_trf1. Recibo da base trf1 guarda ementa e dispositivo (sem voto); o inteiro teor só existe nos da TNU " +
+      "lidos por obter_decisao_trf1. Recibo de BUSCA guarda só o que a lista trouxe (na TNU, sem inteiro teor) e não prova que o processo esteja completo.",
     "",
   ];
   if (!todos.length) linhas.push(`_(nenhum recibo em ${pasta || DIR_RECIBOS(env)})_`);
@@ -2273,7 +2788,8 @@ export function buscarRecibos(a = {}, env = process.env) {
     const tre = trechoEmVolta(r.inteiro_teor || r.texto, r._tn, pat);
     if (tre) linhas.push(`   «…${tre}…»`);
     const cust = r.inteiro_teor_incluido ? "inteiro teor da TNU incluído" : "só ementa/dispositivo (sem voto)";
-    linhas.push(`   recibo lido do portal em ${String(r.obtido_em || "?").slice(0, 16).replace("T", " ")} · ${cust}`);
+    const orig = r.origem === "busca" ? "da busca" : "de decisão (obter_decisao_trf1)";
+    linhas.push(`   recibo ${orig}, lido do portal em ${String(r.obtido_em || "?").slice(0, 16).replace("T", " ")} · ${cust}`);
   });
   if (achados.length > lim) linhas.push(`\n_(mais ${achados.length - lim} recibo(s) atendem; aumente \`limite\` até ${RECIBOS_LIMITE_MAX} ou refine os termos)_`);
   linhas.push("\nPara conferir uma frase antes das aspas: verificar_citacao_trf1(numero, trecho) — usa o recibo, 0 requisições. " +
@@ -2285,9 +2801,10 @@ export function buscarRecibos(a = {}, env = process.env) {
 // Só dado técnico: NUNCA texto de busca, grupos, nome de relator/parte nem número de processo. O registro jamais quebra uma ferramenta.
 export const ARQUIVO_ERROS = (env = process.env) => env.TRF1_MCP_ARQUIVO_ERROS || path.join(os.homedir(), ".trf1-jurisprudencia-erros.jsonl");
 const MAX_LINHAS_ERROS = 500, MAX_BYTES_ERROS = 400_000;
-const VALORES_SEGUROS = new Set(["tipo", "tipo_acordao", "fonte", "base", "tipo_data", "pagina", "por_pagina", "limite", "dias"]);
+const VALORES_SEGUROS = new Set(["tipo", "tipo_acordao", "fonte", "base", "tipo_data", "pagina", "por_pagina", "limite", "dias", "modo"]);
 const LISTA_BRANCA = { tipo: new Set(["ACORDAO", "SUMULA", "ARGUICAO", "DECISAOMONO", "DECISAOPRES"]), tipo_acordao: new Set(["REPRESENTATIVO", "RELEVANTE"]),
-  fonte: new Set(["TRF1", "JEF1"]), base: new Set(["trf1", "tnu", "colegiado"]), tipo_data: new Set(["julgamento", "publicacao"]) };
+  fonte: new Set(["TRF1", "JEF1"]), base: new Set(["trf1", "tnu", "colegiado"]), tipo_data: new Set(["julgamento", "publicacao"]),
+  modo: new Set(["completo", "triagem"]) };
 export const VERSAO_SERVIDOR = `node-${VERSAO}`;
 const RE_MARC_PARCIAL = /\[PESQUISA (?:NÃO REALIZADA|INCOMPLETA)\b/;
 

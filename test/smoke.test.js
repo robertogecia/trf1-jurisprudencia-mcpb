@@ -24,7 +24,7 @@ test("servidor sobe de pasta com espaço e lista as ferramentas", async () => {
     command: process.execPath,
     args: [path.join(destino, "server", "index.js")],
     env: { ...process.env, TRF1_MCP_SEM_AVISO_ATUALIZACAO: "1", TRF1_MCP_DIR_ESTADO: estado,
-      TRF1_MCP_DIR_RECIBOS: path.join(base, "recibos"), TRF1_MCP_ARQUIVO_ERROS: path.join(base, "erros.jsonl") },
+      TRF1_MCP_DIR_RECIBOS: path.join(base, "recibos"), TRF1_MCP_ARQUIVO_ERROS: path.join(base, "erros.jsonl"), TRF1_MCP_ARQUIVO_RITMO: path.join(base, "ritmo.jsonl") },
   });
   try {
     await cliente.connect(transporte);
@@ -32,6 +32,12 @@ test("servidor sobe de pasta com espaço e lista as ferramentas", async () => {
     for (const n of ["buscar_jurisprudencia_trf1", "obter_decisao_trf1", "verificar_citacao_trf1", "diagnostico_ritmo_trf1"]) assert.ok(nomes.includes(n), n);
     const diag = await cliente.callTool({ name: "diagnostico_ritmo_trf1", arguments: {} });
     assert.ok(!diag.isError && /n[íi]vel|limite|requisi/i.test(diag.content[0].text));
+    // v1.6.0: parâmetros novos no esquema e relatório do livro-razão (arquivo vazio na pasta temporária)
+    const ferramentas = (await cliente.listTools()).tools;
+    assert.deepEqual(ferramentas.find((t) => t.name === "obter_decisao_trf1").inputSchema.properties.modo.enum, ["completo", "triagem"]);
+    assert.equal(ferramentas.find((t) => t.name === "diagnostico_ritmo_trf1").inputSchema.properties.relatorio.type, "boolean");
+    const rel = await cliente.callTool({ name: "diagnostico_ritmo_trf1", arguments: { relatorio: true } });
+    assert.ok(!rel.isError && rel.content[0].text.includes("Relatório de ritmo do portal do CJF") && rel.content[0].text.includes("0 requisições registradas"), rel.content[0].text.slice(-600));
   } finally {
     await cliente.close().catch(() => {});
     fs.rmSync(base, { recursive: true, force: true });

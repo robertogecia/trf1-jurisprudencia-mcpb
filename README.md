@@ -77,24 +77,46 @@ O que você recebe de volta:
   avisa quando há mais de um e quando dois deles declaram resultado oposto (provável voto
   vencido).
 - **O inteiro teor da TNU**, não só a ementa: relatório e voto completos, com o órgão, o relator
-  e a data lidos do **fecho do acórdão** — mais confiável que o cadastro do portal.
+  e a data lidos do **fecho do acórdão** — mais confiável que o cadastro do portal. Quando a
+  ementa ou o dispositivo já aparecem, palavra por palavra, dentro do inteiro teor, a resposta não
+  repete o texto: avisa "texto idêntico a trecho do inteiro teor abaixo" e mostra onde começa (o
+  recibo no seu computador guarda sempre o texto completo).
+- **Leitura de triagem.** Peça "só a triagem" de um número e a extensão devolve, para cada
+  julgamento, o resultado declarado, a votação, a tese da ementa, os fatos (na TNU) e as súmulas e
+  temas citados, **sem** a ementa nem o inteiro teor: cerca de 13% a 27% do tamanho da leitura
+  completa. Serve para decidir o que vale ler por inteiro; para pôr trecho entre aspas, leia o
+  texto completo ou use a conferência.
 - **Conferência antes das aspas.** Peça para conferir um trecho e a extensão diz se ele está
   literalmente na ementa, no dispositivo ou (na TNU) no inteiro teor. Se está, ainda avisa **de
   quem é a frase**: o voto pode transcrever ementa de outro tribunal, relatar o que uma parte
   alegou, ou ser o próprio voto vencido.
 - **Um recibo guardado no seu computador** com o texto que o tribunal entregou, toda vez que uma
   decisão é aberta — serve para provar depois que a citação da peça veio do documento, não da
-  imaginação da IA.
+  imaginação da IA. A própria **busca** também guarda um recibo simples de cada resultado (ementa e
+  dispositivo), para você não precisar reabrir o número só para citar; esse recibo de busca nunca
+  apaga um que você já tenha, não prova que o processo esteja completo (na conferência de citação,
+  se o trecho não estiver nele a extensão vai ao portal em vez de dizer que a frase não existe) e,
+  passando de 300 MB, os mais antigos desse tipo são removidos — os de decisões abertas, nunca.
 - **Como o colegiado votou**, quando o próprio dispositivo diz (unânime, por maioria, com
   declaração de voto), e, na TNU, **um trecho literal dos fatos do julgado**, copiado do próprio
   acórdão e marcado como tal — nunca um resumo feito pela IA.
 - **Reencontrar o que você já leu, sem internet.** Peça "procure nos julgados que já abri" e a
   extensão varre só os recibos guardados no seu computador: não gasta consulta ao portal. Se não
   achar nada, isso **não** quer dizer que o julgado não existe, só que você ainda não o abriu.
+  Cada recibo diz se veio da busca ou de uma decisão aberta. Se você descrever o caso com as suas
+  palavras (3 ou mais) e nenhum recibo tiver todas elas, a extensão mostra os que têm **mais** delas,
+  em ordem de semelhança com a ementa, e avisa que mudou de modo: é pista, não prova (em 20
+  consultas de teste o julgado certo ficou entre os 10 primeiros 19 vezes, num acervo pequeno).
 - **Quem cita um precedente e como ele andou no tempo.** Dado o número de um processo, a extensão
   lista os julgados que o citam (com o trecho em volta) e, para uma tese, conta ano a ano quantos
   acórdãos há e como foram decididos. São pistas para você ler, não prova de que o precedente foi
   superado.
+- **Um relatório do ritmo do portal.** A extensão anota, para cada requisição, só o horário, o tipo
+  de operação e o desfecho (deu certo, bloqueio, tempo esgotado…), num arquivo do seu computador
+  (`.trf1-jurisprudencia-ritmo.jsonl`, compartilhado com o servidor Python). Peça o relatório de
+  ritmo e ela mostra em que intervalo entre consultas o portal mais recusa, a maior sequência sem
+  falha e uma recomendação — que **não muda nada sozinha** e, com menos de 100 requisições
+  registradas, manda manter o ritmo atual.
 - **Um diário de problemas, sem espionar você.** Quando uma consulta falha, a extensão anota só o
   tipo do erro, nunca o que você pesquisou, nem nomes, nem número de processo. Se algo persistir,
   peça "gere o relatório de erros" e cole o resultado ao pedir ajuda.
@@ -179,8 +201,9 @@ padrão de [`tjro-jurisprudencia-mcp`](https://github.com/robertogecia/tjro-juri
 
 ## Ferramentas
 
-Mesmas oito do servidor Python: `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`,
-`verificar_citacao_trf1`, `diagnostico_ritmo_trf1` e, desde a v1.5.0, `buscar_recibos_trf1`
+Mesmas oito do servidor Python: `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`
+(`modo="triagem"` para a leitura barata), `verificar_citacao_trf1`, `diagnostico_ritmo_trf1`
+(`relatorio=true` para o relatório do livro-razão de requisições) e, desde a v1.5.0, `buscar_recibos_trf1`
 (busca local, sem rede, nos recibos já gravados), `julgados_que_citam_trf1`, `linha_do_tempo_trf1`
 e `diagnostico_erros_trf1` (diário local de falhas, com `relatorio=true` para issue). Descrições
 completas em [`server/index.js`](server/index.js).
@@ -191,7 +214,7 @@ completas em [`server/index.js`](server/index.js).
 git clone https://github.com/robertogecia/trf1-jurisprudencia-mcpb.git
 cd trf1-jurisprudencia-mcpb
 npm install
-npm test                      # 36 testes de paridade, sobre os mesmos fixtures do servidor Python
+npm test                      # 70 testes de paridade, sobre os mesmos fixtures do servidor Python
 node --check server/index.js
 ```
 
@@ -219,11 +242,16 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
 - **Estado do disjuntor é um arquivo próprio** (`server/.disjuntor_estado_trf1.json`), separado
   do servidor Python — não compartilham orçamento de ritmo entre si, mesmo instalados na mesma
   máquina.
+- **Recibos e livro-razão são compartilhados com o Python.** A pasta `~/.trf1-jurisprudencia-recibos`
+  (com o índice `.busca-indice.json` dos recibos de busca) e o arquivo
+  `~/.trf1-jurisprudencia-ritmo.jsonl` têm o mesmo formato nos dois servidores (o campo `impl` da
+  linha do livro-razão diz quem escreveu: `py` ou `node`). Sob `node --test` o livro-razão fica
+  desligado, como o Python sob o `--selftest`, e nenhum teste toca a pasta real de recibos.
 - Fonte de verdade é sempre o servidor Python: mudança de comportamento entra lá primeiro.
 
 ## Testes
 
-`npm test` roda 28 casos, muitos contra os **mesmos fixtures reais** (respostas capturadas do
+`npm test` roda 70 casos, muitos contra os **mesmos fixtures reais** (respostas capturadas do
 portal do CJF) usados no `--selftest` do servidor Python — parsing de busca TRF1/TNU/colegiado,
 texto do inteiro teor, atribuição da frase (TRANSCRIÇÃO/VOTO DIVERGENTE/ALEGAÇÃO DA
 PARTE/ENTRE ASPAS/NEGAÇÃO), fecho da TNU com casos de divergência, recibos em disco (grava, lê,
