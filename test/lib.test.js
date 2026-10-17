@@ -568,3 +568,218 @@ test("TESE DA EMENTA (porte do TJRO v1.29.0): literal, só quando não cabe no t
   assert.ok(lt.includes("literal") && !lt.split("«", 2)[1].split("»")[0].includes("«"));
   assert.equal(lib.linhaTeseDaBusca(emt), ""); assert.equal(lib.linhaTeseDaBusca(""), "");
 });
+
+// ============================================================================================================
+// v1.6.0 — lote 1 do porte do TJRO v1.30–v1.37 (espelho do selftest do Python v1.5.5, commit 790f487)
+// ============================================================================================================
+const docs02 = () => lib.parsearDocumentos(lib.extrairUpdate(ler("02_busca_dano_moral.xml"), "formulario"), "trf1");
+const docs04 = () => lib.parsearDocumentos(lib.extrairUpdate(ler("04_pagina2.xml"), "formulario:tabelaDocumentos"), "trf1");
+const M1 = { consulta_montada: "x", pagina: 1, por_pagina: 30, base: "trf1" };
+
+test("v1.6.0 (1) julgado recente 🆕: até 30 dias, pela data do índice ou do fecho; futura/impossível não conta", () => {
+  const h = "2026-10-17";
+  assert.equal(lib.diasRecente({ data_julgamento: "10/10/2026" }, h), 7);
+  assert.equal(lib.diasRecente({ data_julgamento: "17/09/2026" }, h), 30);
+  assert.equal(lib.diasRecente({ data_julgamento: "16/09/2026" }, h), null);
+  assert.equal(lib.diasRecente({ data_julgamento: "20/10/2026" }, h), null);
+  assert.equal(lib.diasRecente({ data_julgamento: "31/11/2026" }, h), null);
+  assert.equal(lib.diasRecente({}, h), null);
+  assert.equal(lib.diasRecente({ data_julgamento: "01/08/2026", data_fecho: "10/10/2026" }, h), 7);   // vale a menor distância
+  const rec = { ...docs02()[0], data_julgamento: "10/10/2026", data_publicacao: "" };
+  const sr = lib.formatBusca([rec], 1, { ...M1, hoje: h });
+  assert.ok(sr.includes("Julgamento: 10/10/2026 🆕") && sr.includes("🆕 JULGADO RECENTE (7 dia(s)): pode ainda não ter sido publicado e cabe embargos de declaração"), sr);
+  assert.ok(!lib.formatBusca([rec], 1, { ...M1, hoje: "2026-12-01" }).includes("JULGADO RECENTE"));
+  assert.equal(lib.diasRecente({ data_julgamento: lib_hoje() }, undefined), 0);   // sem `hoje`: relógio local
+});
+function lib_hoje() { const d = new Date(); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; }
+
+test("v1.6.0 (3) consulta pouco seletiva: a partir de 1.000 documentos, em qualquer página", () => {
+  const d0 = docs02()[0];
+  assert.ok(lib.formatBusca([d0], 1000, M1).includes("Consulta pouco seletiva (1000 documentos)"));
+  assert.ok(!lib.formatBusca([d0], 999, M1).includes("pouco seletiva"));
+  assert.ok(lib.formatBusca([d0], 1500, { ...M1, pagina: 3 }).includes("pouco seletiva"));
+});
+
+test("v1.6.0 (5) rótulo PARCIAL nas duas ordens; 'parcial' de embargos só quando é da oração dos embargos", () => {
+  for (const t of ["A Turma, por unanimidade, deu parcial provimento à apelação.", "RECURSO PROVIDO PARCIALMENTE.", "apelação provida em parte",
+    "A Turma, por unanimidade, deu provimento parcial à apelação.", "A TNU decidiu, por maioria, CONHECER e PROVER PARCIALMENTE o pedido."]) {
+    const c = lib.resultadoDe(t);
+    assert.ok(c.has("PARCIAL") && c.has("PROVIDO") && lib.rotuloDoConjunto(c) === "PARCIAL", `${t} ${[...c]}`);
+  }
+  for (const t of ["A Turma, por unanimidade, negou provimento à apelação.", "A TNU decidiu CONHECER PARCIALMENTE do recurso e, nesse ponto, a ele NEGAR PROVIMENTO.", "A Turma deu provimento à apelação."]) {
+    assert.ok(!lib.resultadoDe(t).has("PARCIAL"), t);
+  }
+  const ep = lib.resultadoDe("A Turma, por unanimidade, acolheu parcialmente os embargos de declaração.");
+  assert.ok(ep.has("ACOLHIDO") && ep.has("PARCIAL") && lib.rotuloDoConjunto(ep, true) === "PARCIAL", [...ep].join());
+  assert.ok(lib.resultadoDe("Embargos de declaração parcialmente acolhidos.").has("PARCIAL") && lib.resultadoDe("embargos de declaração acolhidos em parte").has("PARCIAL"));
+  const ei = lib.resultadoDe("A Turma acolheu os embargos de declaração, para dar parcial provimento ao recurso.");
+  assert.ok(ei.has("ACOLHIDO") && !ei.has("PARCIAL"), [...ei].join());   // o parcial é do recurso, não dos embargos
+  assert.ok(lib.resultadoDe("negar provimento aos embargos de declaração").has("REJEITADO") && !lib.resultadoDe("negar provimento aos embargos de declaração").has("DESPROVIDO"));
+  assert.ok(lib.resultadoDe("dou provimento ao recurso", "EMBARGOS DE DECLARAÇÃO NA APELAÇÃO CIVEL (EDAC)").has("ACOLHIDO"));
+  assert.ok(!lib.resultadoDe("dou provimento ao recurso", "EMBARGOS DE DECLARAÇÃO CÍVEL (EDCIV)").has("PROVIDO"));
+  assert.ok(lib.resultadoDe("embargos NÃO acolhidos").has("REJEITADO") && !lib.resultadoDe("embargos NÃO acolhidos").has("ACOLHIDO"));
+  assert.ok(lib.resultadoDe("embargos de terceiro: dar provimento ao recurso").has("PROVIDO") && !lib.resultadoDe("embargos de terceiro: dar provimento ao recurso").has("ACOLHIDO"));
+  assert.equal(lib.rotuloDoConjunto(new Set(["REJEITADO", "PROVIDO"])), "PROVIDO");   // preliminar rejeitada não torna ambíguo o mérito
+  assert.equal(lib.rotuloDoConjunto(new Set(["REJEITADO", "PROVIDO"]), true), "REJEITADO");
+  assert.equal(lib.rotuloDoConjunto(new Set(["PROVIDO", "DESPROVIDO"])), null);
+  assert.equal(lib.rotuloDoConjunto(new Set(["ACOLHIDO", "REJEITADO"]), true), null);
+  const d0 = docs02()[0];
+  const ra = lib.resumoResultadosPagina(["deu parcial provimento", "deu provimento", "negou provimento", "deu parcial provimento"].map((t, i) => ({ ...d0, numero_digitos: String(i), decisao: t })));
+  assert.ok(ra.contagem.PARCIAL === 2 && ra.contagem.PROVIDO === 1 && ra.contagem.DESPROVIDO === 1, JSON.stringify(ra));
+  assert.ok(lib.formatBusca(Array.from({ length: 3 }, (_, i) => ({ ...d0, numero_digitos: String(i), decisao: "deu parcial provimento" })), 3, M1).includes("parcial (provido ou acolhido em parte)"));
+});
+
+test("v1.6.0 (4) resultados opostos só no MESMO julgamento; embargos não se comparam com apelação; o aviso diz qual é qual", () => {
+  const d0 = docs02()[0];
+  const ap = { ...d0, id: "A1", tipo: "Acórdão", classe: "APELAÇÃO CIVEL (AC)", data_julgamento: "01/02/2025", decisao: "A Turma, por unanimidade, deu parcial provimento à apelação." };
+  const mo = { ...ap, id: "B2", tipo: "Decisão Monocrática", decisao: "Nego provimento ao recurso." };
+  const av = lib.avisosOpostos([ap, mo]);
+  assert.ok(av.length === 1 && av[0].includes("id A1 (Acórdão): parcial (provido ou acolhido em parte)") && av[0].includes("id B2 (Decisão Monocrática): desprovido") && av[0].includes("01/02/2025"), av.join());
+  const edR = { ...ap, id: "C3", classe: "EMBARGOS DE DECLARAÇÃO NA APELAÇÃO CIVEL (EDAC)", decisao: "A Turma, por unanimidade, rejeitou os embargos de declaração." };
+  assert.deepEqual(lib.avisosOpostos([{ ...ap, decisao: "A Turma deu provimento à apelação." }, edR]), []);   // apelação provida × embargos rejeitados: normal
+  const pa = { ...ap, id: "D4", decisao: "A Turma acolheu a preliminar de ilegitimidade." };
+  const pr = { ...ap, id: "E5", decisao: "A Turma rejeitou a preliminar de cerceamento." };
+  assert.deepEqual(lib.avisosOpostos([pa, pr]), []);   // "preliminar acolhida × rejeitada" fora de embargos era falso alarme
+  const e1 = { ...edR, id: "F6", decisao: "A Turma acolheu os embargos de declaração." };
+  const av2 = lib.avisosOpostos([e1, edR]);
+  assert.ok(av2.length === 1 && av2[0].includes("id F6 (Acórdão): acolhido") && av2[0].includes("id C3 (Acórdão): rejeitado"), av2.join());
+  assert.deepEqual(lib.avisosOpostos([{ ...ap, data_julgamento: "" }, { ...mo, data_julgamento: "" }]), []);   // sem data não se presume mesmo julgamento
+  const ent = { ...ap, id: "G7", data_julgamento: "01/02/2024", decisao: "A Turma deu provimento à apelação." };
+  const ent2 = { ...ap, id: "H8", data_julgamento: "01/06/2025", decisao: "A Turma negou provimento ao agravo interno." };
+  const ae = lib.avisosEntreJulgamentos([ent, ent2]);
+  assert.ok(ae.length === 1 && ae[0].includes("01/02/2024 (id G7): provido") && ae[0].includes("01/06/2025 (id H8): desprovido"), ae.join());
+  assert.deepEqual(lib.avisosEntreJulgamentos([ent, { ...edR, data_julgamento: "01/06/2025" }]), []);   // embargos rejeitados depois da apelação provida: o normal
+  const ae3 = lib.avisosEntreJulgamentos([ent, { ...e1, data_julgamento: "01/06/2025" }]);
+  assert.ok(ae3.length === 1 && ae3[0].includes("Embargos de declaração ACOLHIDOS em 01/06/2025 (id F6)"), ae3.join());
+  assert.ok(lib.formatBusca([ap, mo], 2, M1).includes("declaram resultados opostos: id A1"));
+});
+
+test("v1.6.0 (6) embargos acolhidos: a frase literal do dispositivo, sem rótulo de subtipo", () => {
+  const fd = "Decide a Turma, por unanimidade, acolher os embargos de declaração para sanar omissão, nos termos do art. 1.022 do CPC. Desembargador Federal X Relator";
+  assert.equal(lib.fraseDosEmbargos(fd), "Decide a Turma, por unanimidade, acolher os embargos de declaração para sanar omissão, nos termos do art. 1.022 do CPC.");
+  assert.ok(lib.fraseDosEmbargos("A Turma, por unanimidade, acolheu os embargos de declaração da parte autora e rejeitou embargos de declaração da União.").startsWith("A Turma, por unanimidade, acolheu os embargos"));
+  assert.equal(lib.fraseDosEmbargos("Decide a Turma, por unanimidade, rejeitar os embargos de declaração."), "");
+  assert.equal(lib.fraseDosEmbargos(""), "");
+  assert.ok(lib.fraseDosEmbargos("acolher os embargos de declaração " + "x ".repeat(400)).length <= 361);
+  const d0 = docs02()[0];
+  const ap = { ...d0, id: "A1", tipo: "Acórdão", classe: "APELAÇÃO CIVEL (AC)", data_julgamento: "01/02/2025", decisao: "A Turma, por unanimidade, deu parcial provimento à apelação." };
+  const edR = { ...ap, id: "C3", classe: "EMBARGOS DE DECLARAÇÃO NA APELAÇÃO CIVEL (EDAC)", decisao: "A Turma, por unanimidade, rejeitou os embargos de declaração." };
+  const sed = lib.formatBusca([{ ...ap, classe: "EMBARGOS DE DECLARAÇÃO NA APELAÇÃO CIVEL (EDAC)", decisao: "A Turma, por unanimidade, acolheu os embargos de declaração." }], 1, M1);
+  assert.ok(sed.includes("✏️ Embargos acolhidos, frase do dispositivo (literal") && sed.includes("«A Turma, por unanimidade, acolheu os embargos de declaração.»"), sed);
+  assert.ok(!lib.formatBusca([edR], 1, M1).includes("✏️") && !lib.formatBusca([ap], 1, M1).includes("✏️"));
+});
+
+test("v1.6.0 (2) placar do limitador: só lê o estado, nenhuma requisição nova", (t) => {
+  const arqOrig = lib._arquivoEstadoAtual();
+  lib._setArquivoEstadoParaTeste(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-ritmo-")), "estado.json"));
+  t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); });
+  lib._resetDisjuntorParaTeste();
+  const l0 = lib.linhaDeRitmo();
+  assert.ok(l0.includes("0 de 24 requisições") && l0.includes("nível 1 de 5") && l0.includes("todos os processos desta extensão nesta máquina"), l0);
+  lib.reservarRequisicao(); lib.reservarRequisicao();
+  assert.ok(lib.linhaDeRitmo().includes("2 de 24 requisições na janela atual de 1min"), lib.linhaDeRitmo());
+  assert.ok(lib.linhaDeRitmo().includes("2 de 24"));   // ler o placar não gasta requisição
+  assert.equal(JSON.parse(fs.readFileSync(lib._arquivoEstadoAtual(), "utf8")).totalRequisicoes, 2);
+  fs.writeFileSync(lib._arquivoEstadoAtual(), "{ lixo");   // estado ilegível: nível máximo, sem lançar
+  assert.ok(lib.linhaDeRitmo().includes("nível 5 de 5"));
+});
+
+test("v1.6.0 (7) consulta grande recusada: diz o tamanho, manda reduzir, sem prometer limiar", () => {
+  const dg = lib.dicaConsultaGrande("o portal respondeu algo inesperado (esperava xml; veio HTTP 500, content-type='text/html')", "(a OU b) E (c OU d OU e)", [["a", "b"], ["c", "d", "e"]]);
+  assert.ok(dg.includes("2 grupo(s) e 5 termo(s)") && dg.includes("use `grupos`") && dg.includes("divida em duas buscas") && dg.includes("não está provado"), dg);
+  assert.ok(lib.dicaConsultaGrande("BRSResultSet.errWhenExecutingSearch", "servidor$ OU tribut$ OU compet$", null).includes("1 grupo(s) e 3 termo(s)"));
+  assert.equal(lib.dicaConsultaGrande("falha de rede (ReadTimeout)", "a OU b", null), "");
+  assert.equal(lib.dicaConsultaGrande("disjuntor em pausa", "a", null), "");
+});
+
+// portal simulado: GET devolve o formulário (fixture 01), POST devolve a busca (fixture 02) e, na paginação, a tabela com os documentos pedidos
+function portalFalso({ status500 = false, htmlDocsPagina = null } = {}) {
+  let n = 0;
+  return async (url, init = {}) => {
+    n++;
+    const get = !init.method || init.method === "GET";
+    if (get) return new Response(ler("01_index.html"), { status: 200, headers: { "content-type": "text/html;charset=UTF-8" } });
+    if (status500) return new Response("<html>erro</html>", { status: 500, headers: { "content-type": "text/html" } });
+    const corpo = String(init.body || "");
+    if (htmlDocsPagina && /first=/.test(corpo)) {
+      return new Response(`<?xml version="1.0"?><partial-response><changes><update id="formulario:tabelaDocumentos"><![CDATA[${htmlDocsPagina}]]></update></changes></partial-response>`,
+        { status: 200, headers: { "content-type": "text/xml;charset=UTF-8" } });
+    }
+    return new Response(ler("02_busca_dano_moral.xml"), { status: 200, headers: { "content-type": "text/xml;charset=UTF-8" } });
+  };
+}
+
+test("v1.6.0 (7/8/2) fluxo de buscar com portal simulado: consulta grande, saída grande e placar de ritmo", async (t) => {
+  const arqOrig = lib._arquivoEstadoAtual();
+  lib._setArquivoEstadoParaTeste(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-fluxo-")), "estado.json"));
+  t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); });
+  lib._resetDisjuntorParaTeste();
+  // 500 do portal: PESQUISA NÃO REALIZADA com o tamanho da consulta
+  const e500 = await lib.buscar({ grupos: [["a", "b"], ["c"], ["d", "e", "f"]] }, portalFalso({ status500: true }));
+  assert.ok(e500.startsWith("[PESQUISA NÃO REALIZADA") && e500.includes("3 grupo(s) e 6 termo(s)") && e500.includes("divida em duas buscas"), e500);
+  lib._resetDisjuntorParaTeste();
+  // saída grande: 60 documentos pedidos como página de 50 -> corta no limite de um resultado, mantém o resumo, tira a próxima página
+  const htmlDocs = lib.extrairUpdate(ler("02_busca_dano_moral.xml"), "formulario") + lib.extrairUpdate(ler("04_pagina2.xml"), "formulario:tabelaDocumentos");
+  const gr = await lib.buscar({ consulta: "dano moral", por_pagina: 50 }, portalFalso({ htmlDocsPagina: htmlDocs }));
+  assert.ok(gr.includes("Consulta pouco seletiva (25943 documentos)"), gr.slice(0, 400));
+  assert.ok(gr.includes("SAÍDA CORTADA:") && gr.includes("resultados cabem aqui") && gr.includes("por_pagina=10 e pagina=1") && !gr.includes("Próxima página"), gr.slice(-900));
+  assert.ok(gr.trimEnd().endsWith("Se o seu roteiro tem teto por frente, conte as suas chamadas: este número só diz o fôlego do limitador._"));
+  assert.ok(gr.length < lib.SAIDA_MAX_CHARS + 1500 && gr.includes("Resumo desta página") && gr.includes("**1. "));
+  const kk = Number(gr.split("SAÍDA CORTADA: ")[1].split(" de ")[0]);
+  assert.ok(gr.includes(`**${kk}. `) && !gr.includes(`**${kk + 1}. `));
+  assert.ok(/_Ritmo do portal: \d+ de 24 requisições/.test(gr));
+});
+
+test("v1.6.0 (8) limitarSaidaBusca: corta no limite de um resultado e mantém o rodapé", () => {
+  assert.equal(lib.limitarSaidaBusca("curto"), "curto");
+  const grande = "cab\n" + Array.from({ length: 10 }, (_, i) => `\n**${i + 1}. Acórdão — x**\n  ` + "y".repeat(3000)).join("") + "\n\nResumo desta página: ok\nPróxima página: pagina=2";
+  const lg = lib.limitarSaidaBusca(grande, 10000, 1, 30);
+  assert.ok(lg.includes("SAÍDA CORTADA: 3 de 10") && lg.includes("Resumo desta página: ok") && !lg.includes("Próxima página") && !lg.includes("**4. ") && lg.includes("**3. ") && lg.length <= 10000, lg.slice(-400));
+});
+
+test("v1.6.0 (9) alertas que dizem ONDE: VOTO DIVERGENTE mostra a abertura; OBITER mostra a frase", () => {
+  const votoTr = "RELATÓRIO. O INSS sustenta que o benefício é indevido porque o segurado voltou a trabalhar. VOTO. Nesse sentido, transcrevo: EMENTA: PREVIDENCIÁRIO. AUXÍLIO-DOENÇA. O retorno ao trabalho não impede " +
+    "a percepção do benefício quando comprovada a incapacidade. Recurso conhecido e provido. (STJ, REsp 1.234.567/RS, Rel. Min. Fulano, DJe 01/01/2020). No caso dos autos, entendo que a " +
+    "incapacidade ficou provada e o retorno ao trabalho foi tentativa frustrada. Fixo a seguinte tese: 'o retorno ao trabalho por tentativa não afasta o direito ao benefício'. Não há como acolher o pedido " +
+    "de repetição dos valores recebidos de boa-fé. Peço vênia para divergir do relator: o retorno ao trabalho afasta o benefício desde o primeiro dia.";
+  const ad = lib.conferir(votoTr, "afasta o benefício desde o primeiro dia", "TNU").alertas.find((a) => a.startsWith("VOTO DIVERGENTE"));
+  assert.ok(ad.includes("Essa parte começa assim: «Peço vênia para divergir do relator"), ad);
+  const tnuV = "Documento:1\nTIMBRE\nRELATOR : Juiz Federal FULANO DE TAL\nRELATÓRIO\nTrata-se de pedido de uniformização contra acórdão que negou o benefício assistencial.\n" +
+    "VOTO\nNego provimento ao pedido, pois a renda familiar supera o limite legal.\nassinado por FULANO DE TAL,\n" +
+    "Documento:2\nTIMBRE\nRELATOR : Juiz Federal FULANO DE TAL\nVOTO-VISTA\nPeço vênia ao relator para divergir, porque a renda per capita deve excluir os gastos com medicamentos de alto custo.\nassinado por BELTRANO SILVA,\n" +
+    "Documento:3\nTIMBRE\nRELATOR : Juiz Federal FULANO DE TAL\nACÓRDÃO\nA Turma Nacional de Uniformização decidiu, por maioria, negar provimento. Brasília, 10 de maio de 2025.\n";
+  const av3 = lib.conferir(tnuV, "a renda per capita deve excluir os gastos com medicamentos de alto custo", "TNU").alertas.find((a) => a.startsWith("VOTO DIVERGENTE"));
+  assert.ok(av3.includes("Esse voto começa assim: «VOTO-VISTA Peço vênia ao relator para divergir"), av3);
+  const ob = "A sentença merece reforma. Ainda que assim não fosse, o benefício seria indevido porque a parte não comprovou a incapacidade laboral para o trabalho habitual.";
+  const ao = lib.conferir(ob, "o benefício seria indevido porque a parte não comprovou a incapacidade laboral", "TNU").alertas.find((a) => a.startsWith("OBITER"));
+  assert.ok(ao.endsWith("A frase: «Ainda que assim não fosse,» + o trecho."), ao);
+  const ao2 = lib.conferir(ob, "Ainda que assim não fosse, o benefício seria indevido porque a parte não comprovou", "TNU").alertas.find((a) => a.startsWith("OBITER"));
+  assert.ok(ao2.endsWith("A marca está no começo do próprio trecho citado."), ao2);
+});
+
+test("v1.6.0 (10) FATOS DO JULGADO: o ÚLTIMO 'caso em exame' fora de transcrição; relator vencido avisa", () => {
+  const pEmenta = "EMENTA. I. CASO EM EXAME Pedido de uniformização sobre o benefício assistencial do autor, com renda familiar discutida nos autos. II. QUESTÃO EM DISCUSSÃO Renda. IV. DISPOSITIVO E TESE Recurso provido.";
+  const outra = "Nesse sentido, transcrevo: EMENTA: I. CASO EM EXAME Ação previdenciária sobre aposentadoria rural de outra segurada, em processo diverso deste. " +
+    "II. QUESTÃO EM DISCUSSÃO Prova. IV. DISPOSITIVO E TESE Recurso desprovido. (TRF4, AC 5000000-00.2020.4.04.9999, Rel. Des. Fulano, julgado em 01/01/2021).";
+  const it2 = "VOTO\nNo caso dos autos, a renda familiar excede o limite. " + outra + " Assim, aplico o precedente.\n" + pEmenta;
+  const f2 = lib.fatosDoJulgado(it2);
+  assert.ok(f2 && f2[0] === "ementa › caso em exame" && f2[1].startsWith("Pedido de uniformização sobre o benefício assistencial"), JSON.stringify(f2));
+  assert.ok(lib.fatosDoJulgado(pEmenta)[1].startsWith("Pedido de uniformização") && lib.fatosDoJulgado(it2.replace("(TRF4,", "(xx,")) !== null);
+  const rel = "RELATÓRIO\nTrata-se de pedido de uniformização contra acórdão da turma recursal que negou o benefício assistencial ao autor idoso.\nVOTO\nNego provimento ao pedido.\n";
+  const venc = { inteiro_teor_texto: rel + "ACÓRDÃO\nA Turma Nacional de Uniformização decidiu, por maioria, vencido o relator, dar provimento ao pedido.", relator_texto: "X", relator_acordao_texto: "" };
+  assert.ok(lib.linhaFatos(venc).includes("Relator VENCIDO: o voto que segue o relatório é o vencido"));
+  const venc2 = { inteiro_teor_texto: rel + "ACÓRDÃO\nA TNU decidiu, por maioria, dar provimento.", relator_texto: "Juiz Federal FULANO", relator_acordao_texto: "Juiz Federal BELTRANO" };
+  assert.ok(lib.linhaFatos(venc2).includes("relator do acórdão: Juiz Federal BELTRANO"));
+  assert.ok(!lib.linhaFatos({ inteiro_teor_texto: rel + "ACÓRDÃO\nA TNU decidiu, por unanimidade, negar provimento.", relator_texto: "Juiz Federal FULANO", relator_acordao_texto: "" }).includes("VENCIDO"));
+  assert.ok(!lib.linhaFatos({ ...venc, inteiro_teor_texto: pEmenta + " vencido o relator" }).includes("VENCIDO"));   // fatos da ementa do acórdão: nada a avisar
+  // o "É o breve relatório" que fecha o trecho: \b do Python é Unicode, o do JS não — o É inicial precisa de fronteira própria
+  const itB = "RELATÓRIO\nTrata-se de pedido de uniformização contra acórdão da turma recursal que negou o benefício assistencial ao autor idoso, distribuído à minha relatoria. É o breve relatório\nVOTO\nNego.";
+  assert.ok(!lib.linhaFatos({ inteiro_teor_texto: itB }).includes("É o breve relatório"));
+});
+
+test("v1.6.0 (11) TESE DA EMENTA: corte acima de 1.000 caracteres igual ao rfind(\". \", 0, teto + 1) do Python", () => {
+  const tesePt = (pos) => "I. CASO EM EXAME x. IV. DISPOSITIVO E TESE Recurso provido. Tese de julgamento: Frase um. " + "a".repeat(pos - 10) + ". " + "b".repeat(400);
+  const t1 = lib.teseDaEmenta(tesePt(lib.TESE_MAX - 1)), t2 = lib.teseDaEmenta(tesePt(lib.TESE_MAX)), t3 = lib.teseDaEmenta(tesePt(lib.TESE_MAX - 2));
+  assert.ok(t1.texto.length === lib.TESE_MAX && t1.texto.endsWith("a.") && !t1.completa, String(t1.texto.length));   // ponto em teto-1: entra
+  assert.ok(t2.texto === "Frase um." && t3.texto.length === lib.TESE_MAX - 1, `${t2.texto.slice(0, 20)} ${t3.texto.length}`);   // ponto em teto: fica de fora
+});
