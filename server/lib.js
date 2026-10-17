@@ -13,10 +13,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
-import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, obiterAntes, trechosObiter } from "./atribuicao13.js";
+import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.5.6";
+export const VERSAO = "1.6.0";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -348,14 +348,40 @@ const OPOSTOS = [["PROVIDO", "DESPROVIDO"], ["ACOLHIDO", "REJEITADO"]];
 const RE_NAO_CONHECIDO = /\bNAO (SE )?CONHEC/;
 const RE_CONHECIDO = /(?<!NAO )(?<!NAO SE )\bCONHEC/;
 const RE_DESPROVIDO = /\b(DESPROVI|IMPROVI|NAO PROVI|NEG\w*(-(SE|LHE|LHES)| SE)? (INTEGRAL |PARCIAL )?PROVIMENTO|PROVIMENTO NEGADO)/;
-const RE_PROVIDO = /(?<!NAO )\b(PROVI(DO|DOS|DA|DAS)\b|D(A|AO|AR|OU|ERAM|EU)(-(SE|LHE|LHES)| SE)? (INTEGRAL |PARCIAL )?PROVIMENTO)/;
-const RE_REJEITADO = /\bREJEIT/;
-const RE_ACOLHIDO = /\bACOLH/;
+// v1.6.0 (espelho do Python v1.5.5): "PROVER" (TNU: "CONHECER e PROVER PARCIALMENTE o pedido") também é provimento.
+const RE_PROVIDO = /(?<!NAO )\b(PROVI(DO|DOS|DA|DAS)\b|PROVER\b|D(A|AO|AR|OU|ERAM|EU)(-(SE|LHE|LHES)| SE)? (INTEGRAL |PARCIAL )?PROVIMENTO)/;
+// "embargos NÃO acolhidos" é rejeição, não acolhimento.
+const RE_REJEITADO = /\bREJEIT|\bNAO ACOLH/;
+const RE_ACOLHIDO = /(?<!NAO )\bACOLH/;
 const RE_PREJUDICADO = /\bPREJUDICAD/;
+// PARCIAL é qualificador do PROVIDO (o par OPOSTOS não muda). Cobre as duas ordens ("parcial provimento", "provimento parcial",
+// "parcialmente provido", "provido em parte", "RECURSO PROVIDO PARCIALMENTE").
+const RE_PARCIAL = /\bPARCIAL(MENTE)? PROVI|\bPARCIAL PROVIMENTO|\bPROVIMENTO PARCIAL|\bPROVIMENTO EM PARTE|\bPROVID[OA]S? EM PARTE|\bPROVID[OA]S? PARCIALMENTE|\bPROVER (PARCIALMENTE|EM PARTE)/;
+// Embargos de declaração: o par ACOLHIDO × REJEITADO só vale neles; "provimento"/"negar provimento" aos embargos é acolhimento/rejeição.
+const RE_EMBARGOS_DECL = /\bEMBARGOS (DE DECLARACAO|DECLARATORIOS|ACLARATORIOS|(NAO )?PROVIDOS?|REJEITADOS?|ACOLHIDOS?|PARCIALMENTE)/;
+const RE_EMBARGOS_OUTROS = /\bEMBARGOS (DE TERCEIRO|A EXECUCAO|DE EXECUCAO|MONITORIOS|INFRINGENTES)/;
+const RE_CLASSE_EMBARGOS = /EMBARGOS DE DECLARA/;
+const RE_ED_PARCIAL = /\bPARCIALMENTE (ACOLH|PROVID)|\b(ACOLH|PROVID)\w* (PARCIALMENTE|EM PARTE)|\bPARCIAL (ACOLHIMENTO|PROVIMENTO)|\bPROVIMENTO (PARCIAL|EM PARTE)/;
+const RE_ED_OUTRO_OBJETO = /\b(AGRAVO|APELACAO|RECURSO|REMESSA|RECURSAL|RECURSOS)\b/;
+const RE_ED_EXPLICITO = /\bEMBARGOS( DE DECLARACAO)?( \w+)? (PARCIALMENTE|EM PARTE)|\bEMBARGOS( DE DECLARACAO)? (ACOLHID|PROVID)\w* (PARCIALMENTE|EM PARTE)/;
 
-export function resultadoDe(texto) {
+/** _parcial_dos_embargos: o qualificador "parcial" é dos EMBARGOS só quando a oração dele fala dos embargos (ou de ninguém mais):
+ * "embargos acolhidos, para dar parcial provimento ao recurso" continua acolhimento integral. */
+export function parcialDosEmbargos(cauda) {
+  return String(cauda ?? "").split(/[,.;:]/).some((seg) => RE_ED_PARCIAL.test(seg) && (!RE_ED_OUTRO_OBJETO.test(seg) || RE_ED_EXPLICITO.test(seg)));
+}
+
+/** _eh_embargos_texto: julgamento de embargos de declaração? Pela classe do índice ou pelo próprio dispositivo. */
+export function ehEmbargosTexto(caudaFoldUpper, classe = "") {
+  if (RE_CLASSE_EMBARGOS.test(fold(classe || "").toUpperCase())) return true;
+  return RE_EMBARGOS_DECL.test(caudaFoldUpper) && !RE_EMBARGOS_OUTROS.test(caudaFoldUpper);
+}
+
+/** _resultado_com_embargos: [conjunto de rótulos, é-embargos]. */
+export function resultadoComEmbargos(texto, classe = "") {
   const t = fold(texto).toUpperCase();
   const cauda = t.length > 2500 ? t.slice(-2500) : t;
+  const embargos = ehEmbargosTexto(cauda, classe);
   const r = new Set();
   if (RE_NAO_CONHECIDO.test(cauda)) r.add("NÃO CONHECIDO");
   if (RE_CONHECIDO.test(cauda)) r.add("CONHECIDO");
@@ -364,33 +390,87 @@ export function resultadoDe(texto) {
   if (RE_REJEITADO.test(cauda)) r.add("REJEITADO");
   if (RE_ACOLHIDO.test(cauda)) r.add("ACOLHIDO");
   if (RE_PREJUDICADO.test(cauda)) r.add("PREJUDICADO");
-  return r;
+  if (RE_PARCIAL.test(cauda)) r.add("PARCIAL");
+  if (embargos) {
+    // "embargos providos" = acolhidos; "negar provimento aos embargos" = rejeitados; o parcial só vale se for da oração dos embargos
+    r.delete("PARCIAL");
+    if (r.has("PROVIDO")) { r.delete("PROVIDO"); r.add("ACOLHIDO"); }
+    if (r.has("DESPROVIDO")) { r.delete("DESPROVIDO"); r.add("REJEITADO"); }
+    if (r.has("ACOLHIDO") && !r.has("REJEITADO") && parcialDosEmbargos(cauda)) r.add("PARCIAL");
+  }
+  return [r, embargos];
+}
+
+export function resultadoDe(texto, classe = "") {
+  return resultadoComEmbargos(texto, classe)[0];
 }
 export function ladoDe(conjunto, [a, b]) {
   if (conjunto.has(a) && conjunto.has(b)) return null;
   return conjunto.has(a) ? a : conjunto.has(b) ? b : null;
 }
-const ROTULOS_RESULTADO = { PROVIDO: "provido", DESPROVIDO: "desprovido", ACOLHIDO: "acolhido",
-  REJEITADO: "rejeitado", PREJUDICADO: "prejudicado", "NÃO CONHECIDO": "não conhecido" };
+export const ROTULOS_RESULTADO = { PROVIDO: "provido", PARCIAL: "parcial (provido ou acolhido em parte)", DESPROVIDO: "desprovido",
+  ACOLHIDO: "acolhido", REJEITADO: "rejeitado", PREJUDICADO: "prejudicado", "NÃO CONHECIDO": "não conhecido" };
+
+/** _rotulo_do_conjunto: rótulo único de um julgamento (PROVIDO/PARCIAL/DESPROVIDO/ACOLHIDO/REJEITADO) ou null (sem sinal ou ambíguo).
+ * Fora de embargos decide o par do MÉRITO ("preliminar rejeitada" não manda o julgamento para "ambíguo"); em embargos o par
+ * ACOLHIDO × REJEITADO vem primeiro. Os dois lados do mesmo par continuam ambíguos. */
+export function rotuloDoConjunto(conjunto, embargos = false) {
+  const ordem = embargos ? [OPOSTOS[1], OPOSTOS[0]] : [OPOSTOS[0], OPOSTOS[1]];
+  for (const par of ordem) {
+    if (conjunto.has(par[0]) && conjunto.has(par[1])) return null;
+    const lado = ladoDe(conjunto, par);
+    if (lado) return (lado === "PROVIDO" || lado === "ACOLHIDO") && conjunto.has("PARCIAL") ? "PARCIAL" : lado;
+  }
+  return null;
+}
 
 export function resumoResultadosPagina(docs) {
   // paridade com _resumo_resultados_pagina do Python: sem nº+data a chave é a posição; julgamento sem resultado entra em "sem resultado"
   const porJulgamento = new Map();
   docs.forEach((d, i) => {
     const chave = d.numero_digitos && d.data_julgamento ? `${d.numero_digitos}|${d.data_julgamento}` : `#${i}`;
-    if (!porJulgamento.has(chave)) porJulgamento.set(chave, new Set());
-    for (const c of resultadoDe(d.decisao || "")) porJulgamento.get(chave).add(c);
+    if (!porJulgamento.has(chave)) porJulgamento.set(chave, { conj: new Set(), emb: false });
+    const j = porJulgamento.get(chave);
+    const [conj, emb] = resultadoComEmbargos(d.decisao || "", d.classe || "");
+    for (const c of conj) j.conj.add(c);
+    j.emb = j.emb || emb;
   });
   const contagem = Object.fromEntries(Object.keys(ROTULOS_RESULTADO).map((k) => [k, 0]));
   let semResultado = 0;
-  for (const conj of porJulgamento.values()) {
-    const lados = OPOSTOS.map((par) => ladoDe(conj, par)).filter(Boolean);
-    if (lados.length === 1) contagem[lados[0]]++;
-    else if (!lados.length && conj.has("PREJUDICADO")) contagem["PREJUDICADO"]++;
-    else if (!lados.length && conj.has("NÃO CONHECIDO")) contagem["NÃO CONHECIDO"]++;
+  for (const j of porJulgamento.values()) {
+    const rot = rotuloDoConjunto(j.conj, j.emb);
+    if (rot) contagem[rot]++;
+    else if (j.conj.has("PREJUDICADO")) contagem["PREJUDICADO"]++;
+    else if (j.conj.has("NÃO CONHECIDO")) contagem["NÃO CONHECIDO"]++;
     else semResultado++;
   }
   return { contagem, sem_resultado: semResultado, total_julgamentos: porJulgamento.size };
+}
+
+// --- Frase do dispositivo que acolhe os embargos (porte do TJRO v1.35.0) ---
+const RE_ABREV_FIM = /(?:^|[^A-Za-zÀ-ÿ])(?:art|arts|n|nº|no|nos|fl|fls|id|des|desa|dr|dra|sr|sra|min|rel|inc|par|proc|cf|fed)\.$/i;
+
+/** _frases_do_texto: divide em frases e junta de novo o pedaço que termina em abreviação ("art.", "Des."). */
+export function frasesDoTexto(t) {
+  const out = [];
+  for (const p of String(t || "").split(/(?<=[.;])\s+(?=[A-ZÀ-Ý0-9])/)) {
+    if (out.length && RE_ABREV_FIM.test(out[out.length - 1])) out[out.length - 1] += " " + p;
+    else out.push(p);
+  }
+  return out;
+}
+
+/** _frase_dos_embargos: a frase LITERAL do dispositivo que acolhe os embargos (sem rótulo de subtipo). Vazio se nenhuma frase fala dos embargos acolhidos. */
+export function fraseDosEmbargos(dispositivo, maximo = 360) {
+  const ok = (f) => {
+    const x = fold(f).toUpperCase();
+    return /EMBARGOS|ACLARATORI|DECLARATORI/.test(x) && (RE_ACOLHIDO.test(x) || /\bDOU PROVIMENTO|(?<!NAO )\bPROVIDOS?\b|\bDAR PROVIMENTO|\bDEU PROVIMENTO/.test(x));
+  };
+  const fr = frasesDoTexto(String(dispositivo || "").replace(/\s+/g, " ").trim()).filter(ok);
+  if (!fr.length) return "";
+  const f = fr[0];
+  const cps = [...f];
+  return cps.length > maximo ? cps.slice(0, maximo).join("").trimEnd() + "…" : f;
 }
 
 // --------------------------------------------------------------- atribuição (TNU) ---
@@ -526,6 +606,40 @@ export function faixaNorm(nt, fragmentos, pertoDe = 0.0) {
   return [ini, fim];
 }
 
+/** _obiter_antes_com_pos: além da marca, onde ela está, para o alerta mostrar a frase. (atribuicao13.js é cópia compartilhada: o envoltório fica aqui.) */
+export function obiterAntesComPos(tn, ini0, fim, bruto) {
+  const cabeca = ini0 + Math.trunc((fim - ini0) * OBITER_CABECA);
+  const piso = Math.max(0, ini0 - OBITER_JANELA);
+  const frase0 = inicioDaFrase(bruto, tn, piso, cabeca);
+  let m = null;
+  for (const x of tn.slice(frase0, cabeca).matchAll(RE_OBITER)) m = x;
+  return m ? { marca: m[0], de: frase0, pos: frase0 + m.index } : null;
+}
+const brutoDe = bruto;   // o `const bruto` local de conferir faz sombra da função
+const emUmaLinha = (x) => String(x).replace(/\s+/g, " ").trim();
+/** _abertura: os primeiros `n` caracteres a partir de `ini`, em uma linha, com reticências só quando cortou. */
+export function abertura(texto, ini, n = 220) {
+  const f = [...emUmaLinha(texto.slice(ini, ini + n + 1))];
+  return f.length > n ? f.slice(0, n).join("").trimEnd() + "…" : f.join("");
+}
+/** _frase_do_obiter: a frase onde está a marca de obiter, ou o aviso de que a marca já está no começo do próprio trecho citado. */
+export function fraseDoObiter(texto, ob, ini0) {
+  if (ob.pos >= ini0) return " A marca está no começo do próprio trecho citado.";
+  const ini = Math.max(ob.de, ob.pos - 40);
+  const f = emUmaLinha(texto.slice(ini, ini0));
+  const cps = [...f];
+  return ` A frase: «${cps.length > 260 ? cps.slice(0, 260).join("") + "…" : f}» + o trecho.`;
+}
+// Onde começa o voto de outro juiz que contém `meio` (para o alerta VOTO DIVERGENTE mostrar a abertura). posicao2.js é cópia
+// compartilhada com outras extensões: em vez de mexer nela, reconstituo aqui o que a posicaoTnu usa (o voto é o intervalo que começa
+// no último cabeçalho de seção anterior ou igual a `meio`).
+const RE_CAB_TNU_INICIO = /(?:(?<=\n)|(?<![\s\S]))[ \t]*(?:RELAT[ÓO]RIO|EMENTA|AC[ÓO]RD[ÃA]O|EXTRATO DE ATA[^\n]*|VOTO(?:[ \t-]+[A-ZÀ-Ú]+){0,3})[ \t]*(?=\n|(?![\s\S]))/g;
+function inicioDoVotoDeOutro(texto, meio) {
+  let ult = null;
+  for (const m of texto.matchAll(RE_CAB_TNU_INICIO)) { if (m.index > meio) break; ult = m.index; }
+  return ult;
+}
+
 export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) {
   const frags = (trecho || "").split(/\[\s*\.\.\.\s*\]|\(\s*\.\.\.\s*\)|\[…\]|…/).map((f) => f.trim()).filter(Boolean);
   if (!frags.length) return { ok: false, erro: "trecho vazio" };
@@ -560,7 +674,8 @@ export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) 
     }
     const div = faixaDivergente(tn, 0);
     if (div && spans.some(([, b]) => b > div[0])) {
-      alertas.push("VOTO DIVERGENTE: o trecho vem depois de um sinal de divergência no acórdão (pedido de vênia, voto vencido ou voto-vista). Pode ser o voto VENCIDO — leia quem venceu antes de citar como entendimento do órgão.");
+      alertas.push("VOTO DIVERGENTE: o trecho vem depois de um sinal de divergência no acórdão (pedido de vênia, voto vencido ou voto-vista). Pode ser o voto VENCIDO — leia quem venceu antes de citar como entendimento do órgão." +
+        ` Essa parte começa assim: «${abertura(String(texto || ""), brutoDe(String(texto || ""), tn, div[0]))}».`);
     }
   }
   // v1.2.0: regras do TJRO v1.13/1.15 sobre norm1(bruto) (1:1), localizando o trecho perto do casamento oficial
@@ -576,18 +691,21 @@ export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) 
   if (fx && negacaoEscopo(nt, fx[0], fx[1], bruto))
     alertas.push(negacaoProxima(nt, fx[0]) ? "NEGAÇÃO: há negativa logo antes do trecho — o recorte pode inverter o julgado. Não citar sem ler a frase inteira."
       : "NEGAÇÃO (distante)?: há uma negativa algumas palavras antes do trecho, fora dele. Na maioria das vezes ela fecha a própria oração e não inverte o recorte (medido às cegas), mas leia a frase inteira antes de citar.");
-  const ob = comAtribuicao && !emTranscricao && fx && !alertas.some((a) => a.startsWith("ENTRE ASPAS")) ? obiterAntes(nt, fx[0], fx[1], bruto) : null;
+  const ob = comAtribuicao && !emTranscricao && fx && !alertas.some((a) => a.startsWith("ENTRE ASPAS")) ? obiterAntesComPos(nt, fx[0], fx[1], bruto) : null;
   if (ob)
-    alertas.push(`OBITER DICTUM?: o trecho vem sob «${ob}» — raciocínio hipotético ou fundamento alternativo; o resultado do julgado não dependeu dele. Vale como reforço, não como ratio decidendi; cite dizendo que é obiter.`);
-  const posicao = comAtribuicao && fx && tribunal === "TNU" ? posicaoTnu(bruto, Math.floor((fx[0] + fx[1]) / 2)) : "";
+    alertas.push(`OBITER DICTUM?: o trecho vem sob «${ob.marca}» — raciocínio hipotético ou fundamento alternativo; o resultado do julgado não dependeu dele. Vale como reforço, não como ratio decidendi; cite dizendo que é obiter.` + fraseDoObiter(bruto, ob, fx[0]));
+  const meioTrecho = fx ? Math.floor((fx[0] + fx[1]) / 2) : 0;
+  const posicao = comAtribuicao && fx && tribunal === "TNU" ? posicaoTnu(bruto, meioTrecho) : "";
   if (posicao && comAtribuicao) {
     // espelho do Python: na TNU o voto de outro juiz vem do título do documento (gabarito cego de 06/10/2026: 85% × 62%)
     let k = alertas.findIndex((x) => x.startsWith("VOTO DIVERGENTE"));
     if (k >= 0) alertas.splice(k, 1); else k = null;
-    if (posicao.startsWith("VOTO de outro juiz") || posicao.startsWith("VOTO do relator VENCIDO"))
+    if (posicao.startsWith("VOTO de outro juiz") || posicao.startsWith("VOTO do relator VENCIDO")) {
+      const iniV = inicioDoVotoDeOutro(bruto, meioTrecho);
       alertas.splice(k !== null ? k : (emTranscricao ? 1 : 0), 0, "VOTO DIVERGENTE: o trecho está num voto que NÃO é o de quem lavrou o acórdão (vista, divergente, vogal ou o " +
         "do relator vencido) — pode ter ficado vencido ou só acompanhado. Leia o acórdão/extrato de ata antes de citar " +
-        "como entendimento da TNU.");
+        "como entendimento da TNU." + (iniV !== null ? ` Esse voto começa assim: «${abertura(bruto, iniV)}».` : ""));
+    }
   }
   return { ok: true, alertas, contexto: tn.slice(Math.max(0, (ini0 || 0) - 120), pos + 120).replace(/\s+/g, " "), spans, tn, posicao };
 }
@@ -744,18 +862,21 @@ const stripChars = (t, cs) => { let a = 0, b = t.length; while (a < b && cs.incl
 /** _fatos_do_julgado: trecho LITERAL em que o julgado resume os fatos (TNU). Devolve [onde, texto] ou null. */
 export function fatosDoJulgado(it) {
   if (!it) return null;
-  for (const sec of secoesDaEmenta(it, 0, it.length)) {
-    if (sec.nome === "caso em exame") {
-      const ini = sec.a;
-      const m = /^\s*(?:[IVXivx]{1,3}\s*[.)-]?\s*)?[Cc][Aa][Ss][Oo] [Ee][Mm] [Ee][Xx][Aa][Mm][Ee]\s*[.:]?\s*/.exec(it.slice(ini, sec.b));
-      const txt = it.slice(ini + (m ? m[0].length : 0), sec.b).trim();
-      if (txt.length > 40) return ["ementa › caso em exame", txt.slice(0, FATOS_MAX)];
-    }
+  // v1.6.0 (espelho do Python v1.5.5, porte do TJRO v1.37): o voto pode transcrever a ementa de OUTRO processo; fica o ÚLTIMO
+  // "caso em exame" fora de transcrição, que é a ementa do próprio acórdão (a transcrita vem antes, dentro do voto)
+  const secs = secoesDaEmenta(it, 0, it.length).filter((x) => x.nome === "caso em exame");
+  const trans = secs.length > 1 ? faixasTranscritas(norm1(it), 0) : [];
+  const proprias = secs.filter((x) => !trans.some(([a, b]) => a <= x.a && x.a < b));
+  for (const sec of [...proprias].reverse()) {
+    const ini = sec.a;
+    const m = /^\s*(?:[IVXivx]{1,3}\s*[.)-]?\s*)?[Cc][Aa][Ss][Oo] [Ee][Mm] [Ee][Xx][Aa][Mm][Ee]\s*[.:]?\s*/.exec(it.slice(ini, sec.b));
+    const txt = it.slice(ini + (m ? m[0].length : 0), sec.b).trim();
+    if (txt.length > 40) return ["ementa › caso em exame", txt.slice(0, FATOS_MAX)];
   }
   const mr = /(?:(?<=\n)|(?<![\s\S]))[ \t]*RELAT[ÓO]RIO[ \t]*(?=\n|(?![\s\S]))/.exec(it.slice(0, 6000));
   if (mr) {
     const fimR = mr.index + mr[0].length;
-    const reVoto = /(?:(?:(?<=\n)|(?<![\s\S]))[ \t]*VOTO\b[^\n]*(?=\n|(?![\s\S])))|\b[ÉEé]\s+o\s+(?:breve\s+)?relat[óo]rio\b/gi;
+    const reVoto = /(?:(?:(?<=\n)|(?<![\s\S]))[ \t]*VOTO\b[^\n]*(?=\n|(?![\s\S])))|(?<![\p{L}\p{N}_])[ÉEé]\s+o\s+(?:breve\s+)?relat[óo]rio(?![\p{L}\p{N}_])/giu;   // \b do Python é Unicode: sem o flag u o É inicial não tinha fronteira
     reVoto.lastIndex = fimR;
     const mv = reVoto.exec(it);
     const fim = mv ? mv.index : Math.min(it.length, fimR + FATOS_MAX);
@@ -765,13 +886,29 @@ export function fatosDoJulgado(it) {
   return null;
 }
 
+const RE_RELATOR_VENCIDO_FECHO = /\bvencid[oa]s? (?:\w+ ){0,6}?(?:o|a|o\(a\)) relator(?:a|\(a\))?\b/;
+/** _relator_vencido: devolve o relator do acórdão (ou "?") quando o relator do cabeçalho ficou VENCIDO: o fecho diz "vencido o relator"
+ * ou a ata traz "RELATOR DO ACÓRDÃO" diferente do relator. Vazio quando não há sinal. */
+export function relatorVencido(d) {
+  const it = d.inteiro_teor_texto || "";
+  if (!it) return "";
+  const rt = "relator_texto" in d ? d.relator_texto : fechoTnu(it).relator_texto;
+  const ra = "relator_acordao_texto" in d ? d.relator_acordao_texto : fechoTnu(it).relator_acordao_texto;
+  const diferente = Boolean(rt && ra && norm(ra) !== norm(rt) && !norm(rt).includes(norm(ra)) && !norm(ra).includes(norm(rt)));
+  if (diferente || RE_RELATOR_VENCIDO_FECHO.test(norm1(it.slice(-6000)))) return ra || "?";
+  return "";
+}
+
 export function linhaFatos(d) {
   const f = fatosDoJulgado(d.inteiro_teor_texto || "");
   if (!f) return "";
   const ft = f[1].replace(/\s+/g, " ") + (f[1].length >= FATOS_MAX ? " […]" : "");
   let aviso = "";
-  if (f[0].startsWith("relatório")) aviso = " ⚠️ É o relatório: narra o pedido e as alegações das partes, NÃO o fundamento nem o resultado; confira os dois no voto e no fecho.";
-  else if (RE_ALEGACAO_FATOS.test(f[1])) aviso = " ⚠️ O trecho contém alegação da parte (sustentou/alega/afirma): é o que a parte diz, não fato reconhecido pelo julgado; não o transforme em fato na ficha.";
+  if (f[0].startsWith("relatório")) {
+    aviso = " ⚠️ É o relatório: narra o pedido e as alegações das partes, NÃO o fundamento nem o resultado; confira os dois no voto e no fecho.";
+    const venc = relatorVencido(d);
+    if (venc) aviso += " ⚠️ Relator VENCIDO: o voto que segue o relatório é o vencido; os fatos e fundamentos que decidem estão no voto vencedor" + (venc !== "?" ? ` (relator do acórdão: ${venc}).` : ".");
+  } else if (RE_ALEGACAO_FATOS.test(f[1])) aviso = " ⚠️ O trecho contém alegação da parte (sustentou/alega/afirma): é o que a parte diz, não fato reconhecido pelo julgado; não o transforme em fato na ficha.";
   return `📌 FATOS DO JULGADO (trecho literal, ${f[0]}; não é resumo meu): "${ft}"${aviso}`;
 }
 
@@ -978,6 +1115,154 @@ export function notaInteiroTeor(d) {
   return "Inteiro teor: link não informado pelo portal.";
 }
 
+// --- Julgado recente (porte do TJRO v1.34.0; espelho do Python v1.5.5) ---
+export const RECENTE_DIAS = 30;
+const DIA_MS = 86_400_000;
+const utcDe = (a, m, d) => { const t = new Date(0); t.setUTCFullYear(a, m - 1, d); t.setUTCHours(0, 0, 0, 0); return t; };
+
+/** `hoje`: Date (vale a data local), "AAAA-MM-DD" ou ausente (hoje, no relógio local). */
+function diaDeHoje(hoje) {
+  if (typeof hoje === "string") { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(hoje); if (m) return utcDe(+m[1], +m[2], +m[3]); }
+  const h = hoje instanceof Date ? hoje : new Date();
+  return utcDe(h.getFullYear(), h.getMonth() + 1, h.getDate());
+}
+export function diasDesdeDataBr(dataBr, hoje) {
+  const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(String(dataBr || ""));
+  if (!m) return null;
+  const [dd, mm, aa] = [+m[1], +m[2], +m[3]];
+  if (aa < 1) return null;
+  const dt = utcDe(aa, mm, dd);
+  if (dt.getUTCFullYear() !== aa || dt.getUTCMonth() !== mm - 1 || dt.getUTCDate() !== dd) return null;   // "31/11/2026" não vira "recente"
+  return Math.round((diaDeHoje(hoje).getTime() - dt.getTime()) / DIA_MS);
+}
+/** _dias_recente: dias desde o julgamento, se forem até RECENTE_DIAS; senão null. Olha a data do índice e a do fecho (TNU, quando o
+ * inteiro teor veio) e fica com a menor distância; data futura ou inválida não conta. */
+export function diasRecente(d, hoje) {
+  const dias = [diasDesdeDataBr(d.data_julgamento || "", hoje), diasDesdeDataBr(d.data_fecho || "", hoje)].filter((x) => x !== null && x >= 0 && x <= RECENTE_DIAS);
+  return dias.length ? Math.min(...dias) : null;
+}
+
+// --- Resultados no mesmo número (porte do TJRO v1.30 e v1.35) ---
+export function rotuloDocumento(conj, emb) {
+  const r = rotuloDoConjunto(conj, emb);
+  return r ? ROTULOS_RESULTADO[r] ?? "sem resultado identificável" : "sem resultado identificável";
+}
+function agruparPorData(irmaos) {
+  const porData = new Map();
+  for (const x of irmaos) if (x.data_julgamento) {
+    if (!porData.has(x.data_julgamento)) porData.set(x.data_julgamento, []);
+    porData.get(x.data_julgamento).push(x);
+  }
+  return porData;
+}
+/** _avisos_opostos: documentos do MESMO julgamento (nº + data) que declaram lados opostos. O par ACOLHIDO × REJEITADO só vale entre
+ * embargos de declaração e o par PROVIDO × DESPROVIDO só fora deles. O aviso diz qual documento diz o quê. */
+export function avisosOpostos(irmaos) {
+  const out = [];
+  for (const [data, grupo] of agruparPorData(irmaos)) {
+    const info = grupo.map((x) => [x, ...resultadoComEmbargos(x.decisao || "", x.classe || "")]);
+    for (const par of OPOSTOS) {
+      const lados = info.filter(([, , emb]) => emb === (par[0] === "ACOLHIDO")).map(([x, conj]) => [x, ladoDe(conj, par), conj]).filter((t) => t[1]);
+      if (new Set(lados.map((t) => t[1])).size > 1) {
+        const quem = lados.map(([x, l, conj]) => `id ${x.id} (${x.tipo || "?"}): ${l === "PROVIDO" && conj.has("PARCIAL") ? ROTULOS_RESULTADO.PARCIAL : ROTULOS_RESULTADO[l]}`).join("; ");
+        out.push(`⚠️ Documentos do julgamento de ${data} declaram resultados opostos: ${quem}. Provável voto vencido ou decisão monocrática indexada; leia cada um e cite pelo id.`);
+      }
+    }
+  }
+  return out;
+}
+/** _avisos_entre_julgamentos: julgamentos de datas diferentes sob o mesmo número: resultados de mérito diferentes e embargos ACOLHIDOS. */
+export function avisosEntreJulgamentos(irmaos) {
+  const porData = agruparPorData(irmaos);
+  if (porData.size < 2) return [];
+  const res = [], edAc = [];
+  for (const [data, grupo] of porData) {
+    const info = grupo.map((x) => resultadoComEmbargos(x.decisao || "", x.classe || ""));
+    const conj = new Set(info.flatMap(([c]) => [...c]));
+    const emb = info.some(([, e]) => e);
+    const r = rotuloDoConjunto(conj, emb);
+    const ident = `${data} (id ${grupo[0].id})`;
+    if (emb) { if (r === "ACOLHIDO" || r === "PARCIAL") edAc.push(ident); }
+    else if (r === "PROVIDO" || r === "PARCIAL" || r === "DESPROVIDO") res.push([ident, ROTULOS_RESULTADO[r]]);
+  }
+  const out = [];
+  if (new Set(res.map(([, r]) => r)).size > 1) {
+    out.push("⚠️ Os julgamentos deste número declaram resultados diferentes: " + res.map(([i, r]) => `${i}: ${r}`).join("; ") +
+      ". Pode ser recurso diferente (apelação e agravo interno) ou reemissão; confira qual vigora antes de citar o resultado.");
+  }
+  if (edAc.length) {
+    out.push("⚠️ Embargos de declaração ACOLHIDOS em " + edAc.join("; ") +
+      ": se tiveram efeito infringente, o resultado vigente é o deles, não o da decisão embargada; leia o dispositivo dos embargos.");
+  }
+  return out;
+}
+
+// --- Placar do limitador no fim da busca (porte do TJRO v1.34.0) ---
+/** _linha_de_ritmo: quantas requisições esta máquina fez na janela atual e o nível do limitador. Só LÊ o estado do disjuntor (nenhuma
+ * requisição nova); o estado é compartilhado por todos os processos desta extensão nesta máquina. */
+export function linhaDeRitmo(agora = Date.now()) {
+  try {
+    const e = comTrava(() => lerEstadoDisjuntor());
+    const idx = Math.max(0, Math.min(Math.trunc(Number(e.indiceJanela) || 0), ESCADA_JANELA_MS.length - 1));
+    const janela = ESCADA_JANELA_MS[idx];
+    const naJanela = (e.requisicoes || []).filter((t) => agora - t <= janela).length;
+    return `\n_Ritmo do portal: ${naJanela} de ${JANELA_MAX_REQS} requisições na janela atual de ${fmtHms(janela)} (nível ${idx + 1} de ` +
+      `${ESCADA_JANELA_MS.length}), contando todos os processos desta extensão nesta máquina; cada busca gasta 2 a 4. Se o seu roteiro ` +
+      "tem teto por frente, conte as suas chamadas: este número só diz o fôlego do limitador._";
+  } catch {
+    return "";
+  }
+}
+
+// --- Saída grande (porte do TJRO v1.33.0) ---
+export const SAIDA_MAX_CHARS = 80_000;
+const comprimento = (t) => [...t].length;   // o Python mede em pontos de código; o JS, em unidades UTF-16 (emoji astral conta 2)
+/** _limitar_saida_busca: acima de `maximo` caracteres corta no limite de UM resultado, mantém o rodapé (resumo da página), tira o
+ * "Próxima página" e diz quantos couberam e como pedir o resto. */
+export function limitarSaidaBusca(texto, maximo = SAIDA_MAX_CHARS, pagina = 1, porPagina = 30) {
+  const t = String(texto ?? "");
+  if (comprimento(t) <= maximo) return t;
+  const cp = (i) => comprimento(t.slice(0, i));   // índice UTF-16 → ponto de código
+  const ini = [...t.matchAll(/\n\*\*(\d+)\. /g)].map((m) => m.index);
+  if (ini.length < 2) return [...t].slice(0, maximo).join("") + "\n\n[SAÍDA CORTADA no limite de caracteres; repita com por_pagina menor.]\n";
+  const reRod = /\n(?:ℹ️ Ementas cortadas|Resumo desta página|Próxima página:)/g;
+  reRod.lastIndex = ini[ini.length - 1];
+  const rod = reRod.exec(t);
+  const corpoFim = rod ? rod.index : t.length;
+  let rodape = t.slice(corpoFim);
+  rodape = rodape.replace(/\nPróxima página:[^\n]*/g, "");   // a página seguinte pularia os resultados cortados
+  const limite = maximo - comprimento(rodape) - 600;
+  const caber = [];
+  ini.forEach((_, i) => { if (cp(i + 1 < ini.length ? ini[i + 1] : corpoFim) <= limite) caber.push(i); });
+  if (!caber.length) caber.push(0);
+  const k = caber[caber.length - 1] + 1;   // resultados inteiros que cabem
+  const ate = k < ini.length ? ini[k] : corpoFim;
+  const primeira = (pagina - 1) * porPagina;
+  const sugestao = porPagina > 10 && primeira % 10 === 0 ? `por_pagina=10 e pagina=${Math.floor(primeira / 10) + 1}` : "por_pagina=10";
+  const aviso = `\n\n[SAÍDA CORTADA: ${k} de ${ini.length} resultados cabem aqui (limite de ${Math.floor(maximo / 1000)} mil caracteres, para a resposta não ser ` +
+    `desviada para arquivo). Repita com ${sugestao}; os ${ini.length - k} restantes desta página não vieram.]\n`;
+  return t.slice(0, ate).trimEnd() + aviso + rodape;
+}
+
+// --- Consulta grande recusada pelo portal (porte do TJRO v1.33.0) ---
+const RE_OPERADOR_CONSULTA = /^(?:E|OU|NAO|NÃO|ADJ\d*|PROX\d*|COM|MESMO|XOU)$/;   // operadores saem em maiúsculas; termo isolado igual a eles vai entre aspas
+/** _tamanho_da_consulta: [grupos, termos] da consulta que o portal recebeu. */
+export function tamanhoDaConsulta(consultaMontada, grupos) {
+  const termos = (String(consultaMontada || "").match(/"[^"]*"|[^\s()]+/g) || []).filter((x) => !RE_OPERADOR_CONSULTA.test(x));
+  const nG = Array.isArray(grupos)
+    ? grupos.filter((g) => Array.isArray(g) && g.some((x) => String(x).trim())).length
+    : consultaMontada ? String(consultaMontada).split(/\s+E\s+/).length : 0;
+  return [nG, termos.length];
+}
+/** _dica_consulta_grande: quando o portal recusa com 'BRSResultSet.errWhenExecutingSearch' ou HTTP 500, diz o tamanho da consulta e manda reduzir. */
+export function dicaConsultaGrande(mensagem, consultaMontada, grupos) {
+  if (!/errWhenExecutingSearch|HTTP 500/.test(String(mensagem ?? ""))) return "";
+  const [nG, nT] = tamanhoDaConsulta(consultaMontada, grupos);
+  if (!nT) return "";
+  return ` O portal recusou uma consulta de ${nG} grupo(s) e ${nT} termo(s); consultas maiores falham com mais frequência, mas o ` +
+    "gatilho exato não está provado. Reduza os termos, use `grupos` ou divida em duas buscas e junte os resultados.";
+}
+
 export function formatBusca(docs, total, meta) {
   const consulta = meta.consulta_montada || "";
   const tipos = meta.tipos || [];
@@ -996,8 +1281,9 @@ export function formatBusca(docs, total, meta) {
   cab += ` · página ${pagina}/${totalPaginas} (${porPagina} por página)`;
   linhas.push(cab);
   for (const a of meta.avisos || []) linhas.push(`⚠️ ${a}`);
-  if (total > 3000 && pagina === 1) {
-    linhas.push('Dica: total alto — restrinja com `E` (ex.: `"dano moral" E negativação`), com `grupos`, com `[EMEN]` para buscar só na ementa, ou com filtro de órgão/relator/data.');
+  if (total >= 1000) {   // porte do TJRO v1.35: a página é só o topo da ordenação
+    linhas.push(`⚠️ Consulta pouco seletiva (${total} documentos): a página mostra só o topo da ordenação, que não representa o conjunto. ` +
+      "Antes de concluir algo sobre ele, restrinja com `E`, `grupos`, `[EMEN]` (só na ementa) ou filtro de órgão, relator ou data.");
   }
   if (fold(filtros.orgao_julgador || "").includes("recursal") && (meta.base || "trf1") === "trf1") {
     linhas.push('⚠️ O filtro de órgão casa por TRECHO do nome. Em 2026 parte das Turmas Recursais aparece com nome novo (ex.: "PRIMEIRA TURMA 4.0 - ADJUNTA A TR-AC", medido em 12/10/2026) e fica de fora de "TURMA RECURSAL". Para cobrir os dois nomes, filtre por "PRIMEIRA TURMA" (ou o trecho comum) e identifique a unidade pelo número CNJ.');
@@ -1026,11 +1312,13 @@ export function formatBusca(docs, total, meta) {
     if (d.relator_para_acordao) metaL.push(`Relator p/ acórdão: ${d.relator_para_acordao}`);
     if (d.orgao) metaL.push(`Órgão: ${d.orgao}`);
     if (d.origem && !d.origem.toUpperCase().includes("PRIMEIRA REGI")) metaL.push(`Origem: ${d.origem}`);
-    if (d.data_julgamento) metaL.push(`Julgamento: ${d.data_julgamento}`);
+    const rec = diasRecente(d, meta.hoje);
+    if (d.data_julgamento) metaL.push(`Julgamento: ${d.data_julgamento}` + (rec !== null ? " 🆕" : ""));
     if (d.data_publicacao) metaL.push(`Publicação: ${d.data_publicacao}`);
     if (d.fonte_publicacao) metaL.push(`Fonte: ${d.fonte_publicacao}`);
     linhas.push("  " + metaL.join(" · "));
     linhas.push(`  Citação: ${citacaoComLink(d)} — verificação: ${nivelVerificacao(d)}`);
+    if (rec !== null) linhas.push(`  🆕 JULGADO RECENTE (${rec} dia(s)): pode ainda não ter sido publicado e cabe embargos de declaração; confira a publicação antes de citar.`);
     const vot = votacaoDoDocumento(d);
     if (vot) linhas.push(`  🗳️ Votação declarada no dispositivo: ${vot} (não diz quem foi o vencido; o voto vencido só se vê no inteiro teor)`);
     for (const sl of linhasDeSinais(d)) linhas.push(`  ${sl}`);
@@ -1039,24 +1327,21 @@ export function formatBusca(docs, total, meta) {
     linhas.push(`  Ementa (trecho): ${trechoCentrado(em, TRECHO_EMENTA) || "—"}`);
     const lt = linhaTeseDaBusca(em);
     if (lt) linhas.push(`  ${lt}`);
-    if (d.decisao) linhas.push(`  Dispositivo: ${trechoCentrado(d.decisao, TRECHO_DECISAO)}`);
+    if (d.decisao) {
+      linhas.push(`  Dispositivo: ${trechoCentrado(d.decisao, TRECHO_DECISAO)}`);
+      const [conjD, embD] = resultadoComEmbargos(d.decisao, d.classe || "");
+      if (embD && ["ACOLHIDO", "PARCIAL"].includes(rotuloDoConjunto(conjD, true))) {
+        const fe = fraseDosEmbargos(d.decisao);
+        // frase literal, não rótulo: o subtipo (erro material, omissão, efeito infringente) não se lê com segurança
+        if (fe) linhas.push(`  ✏️ Embargos acolhidos, frase do dispositivo (literal, para ver se houve efeito infringente; não é rótulo): «${fe}»`);
+      }
+    }
     const irmaos = porNumero.get(d.numero_digitos) || [];
     if (irmaos.length > 1 && irmaos[0] === d) {
       const desc = irmaos.map((x) => `${x.data_julgamento || "?"} ${x.tipo || ""} (id ${x.id}, Rel. ${x.relator || "?"})`).join("; ");
       linhas.push(`  ⚠️ Mesmo número, ${irmaos.length} documentos nesta página: ${desc} — cite pelo id + data, nunca só pelo número.`);
-      for (const par of OPOSTOS) {
-        const porData = new Map();
-        for (const x of irmaos) {
-          const l = ladoDe(resultadoDe(x.decisao || ""), par);
-          if (l) {
-            if (!porData.has(x.data_julgamento)) porData.set(x.data_julgamento, new Set());
-            porData.get(x.data_julgamento).add(l);
-          }
-        }
-        for (const [data, ls] of porData) {
-          if (ls.size > 1) linhas.push(`  ⚠️ Documentos do julgamento de ${data} declaram resultados opostos (${[...ls].sort().join(" × ")}) — provável voto vencido ou decisão monocrática indexada; leia cada um.`);
-        }
-      }
+      for (const av of avisosOpostos(irmaos)) linhas.push(`  ${av}`);
+      for (const av of avisosEntreJulgamentos(irmaos)) linhas.push(`  ${av}`);
     }
     linhas.push(`  ${notaInteiroTeor(d)}`);
   });
@@ -1766,9 +2051,9 @@ export async function buscar(a, fetchImpl = fetch, env = process.env) {
     const dados = await consultarPortal(consultaMontada, tipos, fontes, pagina, porPagina, avancados, tipoData, "busca", base, tipoAcordaoV, fetchImpl, env);
     const meta = { consulta_montada: consultaMontada, tipos, fontes, pagina, por_pagina: porPagina, filtros: avancados,
       avisos: dados.avisos, base, tipo_acordao: tipoAcordaoV };
-    return formatBusca(dados.docs, dados.total, meta);
+    return limitarSaidaBusca(formatBusca(dados.docs, dados.total, meta), SAIDA_MAX_CHARS, pagina, porPagina) + linhaDeRitmo();
   } catch (e) {
-    if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(e.message);
+    if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(String(e.message).trim().replace(/\.+$/, "") + dicaConsultaGrande(e.message, consultaMontada || "", a.grupos));
     if (e.__isParametro) return erroDeParametro(e);
     // erros de validação (throw new Error simples, antes de qualquer rede) são de parâmetro
     return erroDeParametro(e);
