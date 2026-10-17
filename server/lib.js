@@ -105,25 +105,27 @@ export function limpar(texto, limite = 0) {
   t = t.replace(/<[^>]+>/g, " ");
   t = decodeEntities(t);
   t = t.replace(/\s+/g, " ").trim();
-  if (limite && t.length > limite) {
-    const cortado = t.slice(0, limite);
+  if (limite && cpLen(t) > limite) {   // v1.6.0: pontos de código, como o len()/fatia do Python (emoji fora do BMP conta 1)
+    const cortado = cpSlice(t, limite);
     const i = cortado.lastIndexOf(" ");
-    t = (i > 0 ? cortado.slice(0, i) : cortado) + "…";
+    t = (i >= 0 ? cortado.slice(0, i) : cortado) + "…";
   }
   return t;
 }
 /** _trecho_centrado: trecho de até `limite` caracteres que MOSTRA o primeiro termo destacado («…») do portal (v1.5.0). */
 export function trechoCentrado(bruto, limite = 800) {
   const t = limpar(bruto, 0);
-  const i = t.indexOf("«");
+  const cp = [...t];   // v1.6.0: índices e comprimentos em pontos de código, como o Python
+  const i = cp.indexOf("«");
   if (i < 0 || i + 40 <= limite) return limpar(bruto, limite);
   let ini = Math.max(0, i - 200);
-  const esp = t.indexOf(" ", ini);
+  const esp = cp.indexOf(" ", ini);
   ini = ini && esp >= 0 && esp < i ? esp + 1 : ini;
-  const cauda = t.slice(ini);
-  let corte = cauda;
-  if (cauda.length > limite) {
-    const c = cauda.slice(0, limite);
+  const cauda = cp.slice(ini);
+  let corte;
+  if (cauda.length <= limite) corte = cauda.join("");
+  else {
+    const c = cauda.slice(0, limite).join("");
     const k = c.lastIndexOf(" ");
     corte = (k >= 0 ? c.slice(0, k) : c) + "…";
   }
@@ -158,17 +160,16 @@ export function pyRepr(s) {   // repr() de str
   return aspas + o + aspas;
 }
 
-// Entidades HTML nomeadas (o Python usa html.unescape, que as conhece todas): Latin-1 completo + pontuação tipográfica. O colegiado do CJF
-// usa &ndash; &ldquo; &rdquo; &hellip;, que o conjunto antigo (14 letras acentuadas) deixava no texto do recibo.
-const ENTIDADES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
-  ndash: "\u2013", mdash: "\u2014", lsquo: "\u2018", rsquo: "\u2019", sbquo: "\u201a", ldquo: "\u201c", rdquo: "\u201d", bdquo: "\u201e",
-  hellip: "\u2026", bull: "\u2022", dagger: "\u2020", permil: "\u2030", lsaquo: "\u2039", rsaquo: "\u203a", euro: "\u20ac", trade: "\u2122",
-  larr: "\u2190", rarr: "\u2192", ensp: "\u2002", emsp: "\u2003", thinsp: "\u2009" };
-("nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo " +
-  "frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve " +
-  "Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute " +
-  "ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml").split(" ")
-  .forEach((nome, i) => { ENTIDADES[nome] = String.fromCharCode(160 + i); });
+// Entidades HTML5 (v1.6.0): a tabela COMPLETA de html.entities.html5 do Python (2.231 chaves, com e sem ";"), gerada para server/entidades-html5.json.
+// Antes havia só Latin-1 e pontuação tipográfica: &le; ficava cru e &notin; virava "¬in;". Sem o arquivo (instalação truncada), cai num conjunto mínimo.
+const ENTIDADES_HTML5 = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "entidades-html5.json"), "utf-8"));
+  } catch {
+    return { "amp;": "&", amp: "&", "lt;": "<", lt: "<", "gt;": ">", gt: ">", "quot;": '"', quot: '"', "apos;": "'", "nbsp;": "\u00a0", nbsp: "\u00a0" };
+  }
+})();
+const html5 = (k) => (Object.hasOwn(ENTIDADES_HTML5, k) ? ENTIDADES_HTML5[k] : undefined);
 const CP1252_C1 = { 0x80: 0x20ac, 0x82: 0x201a, 0x83: 0x192, 0x84: 0x201e, 0x85: 0x2026, 0x86: 0x2020, 0x87: 0x2021, 0x88: 0x2c6, 0x89: 0x2030, 0x8a: 0x160, 0x8b: 0x2039,
   0x8c: 0x152, 0x8e: 0x17d, 0x91: 0x2018, 0x92: 0x2019, 0x93: 0x201c, 0x94: 0x201d, 0x95: 0x2022, 0x96: 0x2013, 0x97: 0x2014, 0x98: 0x2dc, 0x99: 0x2122, 0x9a: 0x161,
   0x9b: 0x203a, 0x9c: 0x153, 0x9e: 0x17e, 0x9f: 0x178, 0x81: 0x81, 0x8d: 0x8d, 0x8f: 0x8f, 0x90: 0x90, 0x9d: 0x9d };
@@ -178,14 +179,10 @@ function codigoNumerico(n) {   // como html.unescape: inválido -> U+FFFD; 0x80-
   if ((n >= 0x1 && n <= 0x8) || (n >= 0xe && n <= 0x1f) || (n >= 0x7f && n <= 0x9f) || (n >= 0xfdd0 && n <= 0xfdef) || n === 0xb || (n & 0xfffe) === 0xfffe) return "";
   return String.fromCodePoint(n);
 }
-// nomes que o html5 aceita SEM ponto e vírgula (os 96 do Latin-1 + amp lt gt quot e as formas em maiúsculas)
-const LEGACY = new Set([...Object.keys(ENTIDADES).filter((k) => ENTIDADES[k].length === 1 && ENTIDADES[k].charCodeAt(0) >= 160 && ENTIDADES[k].charCodeAt(0) <= 255),
-  "amp", "lt", "gt", "quot", "AMP", "LT", "GT", "QUOT", "COPY", "REG"]);
-Object.assign(ENTIDADES, { AMP: "&", LT: "<", GT: ">", QUOT: '"', COPY: "\u00a9", REG: "\u00ae" });
-const html5 = (k) => (k.endsWith(";") ? (Object.hasOwn(ENTIDADES, k.slice(0, -1)) ? ENTIDADES[k.slice(0, -1)] : undefined) : (LEGACY.has(k) ? ENTIDADES[k] : undefined));
-/** html.unescape do Python (uma passada só, referência numérica com ou sem ";", nome legado sem ";" e prefixo legado). */
+/** html.unescape do Python, passo a passo: referência numérica com ou sem ";"; nome exato (com ";" ou legado sem ";"); senão o MAIOR prefixo que
+ *  seja nome conhecido (só legados casam sem ";") seguido do resto. Uma passada só. */
 export function decodeEntities(t) {
-  return (t || "").replace(/&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)/g, (m, s) => {
+  return (t || "").replace(/&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)/gu, (m, s) => {
     if (s[0] === "#") return codigoNumerico(/^#[xX]/.test(s) ? parseInt(s.slice(2).replace(/;$/, ""), 16) : parseInt(s.slice(1).replace(/;$/, ""), 10));
     const direto = html5(s);
     if (direto !== undefined) return direto;
@@ -201,12 +198,22 @@ export const dataIso = (br) => {
   const m = /^\s*(\d{2})\/(\d{2})\/(\d{4})/.exec(br || "");
   return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
 };
+/** Erro de VALIDAÇÃO de parâmetro (antes de qualquer rede). Só ele vira "Erro de parâmetro (nada foi consultado)"; qualquer outra exceção é
+ *  pesquisa NÃO realizada ("erro inesperado"), como o ValueError × Exception do Python (v1.6.0). */
+export class ErroDeParametro extends Error {}
+
+export const ENTRADA_TEXTO_MAX = 5000;   // v1.6.0: teto de `consulta`/`trecho` nas ferramentas (entrada gigante só gasta CPU)
+export function validarTamanho(rotulo, valor) {
+  const n = typeof valor === "string" ? cpLen(valor) : 0;
+  if (n > ENTRADA_TEXTO_MAX) throw new ErroDeParametro(`${rotulo} com ${n} caracteres; o máximo é ${ENTRADA_TEXTO_MAX}. Reduza a ${rotulo} ao que interessa (o que decide é o trecho central, não o texto inteiro).`);
+}
+
 export function normalizarData(data, rotulo) {
   const d = (data || "").trim();
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) return d;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-  throw new Error(`${rotulo} inválida: ${JSON.stringify(data)} — use AAAA-MM-DD ou DD/MM/AAAA.`);
+  throw new ErroDeParametro(`${rotulo} inválida: ${JSON.stringify(data)} — use AAAA-MM-DD ou DD/MM/AAAA.`);
 }
 
 // --------------------------------------------------------------- montagem da consulta ---
@@ -532,12 +539,13 @@ export function fraseDosEmbargos(dispositivo, maximo = 360) {
 export function norm(t) {
   let r = (t || "").normalize("NFKC");
   r = fold(r);
+  r = r.replace(/\s+/g, " ");   // v1.6.0: colapsa ANTES — `\s+([.,;:)\]])` era quadrático em corridas longas de espaços
   r = r.replace(/\bn\s*[.o°]{1,3}\s*(?=\d)/g, "n ");
   r = r.replace(/§\s+/g, "§");
-  r = r.replace(/[""''"'`´]/g, "'");
+  r = r.replace(/[\u201c\u201d\u2018\u2019"'`´]/g, "'");   // v1.6.0: aspas curvas unificadas, como o Python
   r = r.replace(/[–—-]/g, "-");
-  r = r.replace(/\s+([.,;:)\]])/g, "$1");
-  r = r.replace(/([([])\s+/g, "$1");
+  r = r.replace(/ ([.,;:)\]])/g, "$1");
+  r = r.replace(/([([]) /g, "$1");
   return r.replace(/\s+/g, " ").trim();
 }
 
@@ -926,17 +934,17 @@ export function fatosDoJulgado(it) {
     const ini = sec.a;
     const m = /^\s*(?:[IVXivx]{1,3}\s*[.)-]?\s*)?[Cc][Aa][Ss][Oo] [Ee][Mm] [Ee][Xx][Aa][Mm][Ee]\s*[.:]?\s*/.exec(it.slice(ini, sec.b));
     const txt = it.slice(ini + (m ? m[0].length : 0), sec.b).trim();
-    if (txt.length > 40) return ["ementa › caso em exame", txt.slice(0, FATOS_MAX)];
+    if (cpLen(txt) > 40) return ["ementa › caso em exame", cpSlice(txt, FATOS_MAX)];
   }
-  const mr = /(?:(?<=\n)|(?<![\s\S]))[ \t]*RELAT[ÓO]RIO[ \t]*(?=\n|(?![\s\S]))/.exec(it.slice(0, 6000));
+  const mr = /(?:(?<=\n)|(?<![\s\S]))[ \t]*RELAT[ÓO]RIO[ \t]*(?=\n|(?![\s\S]))/.exec(cpSlice(it, 6000));
   if (mr) {
     const fimR = mr.index + mr[0].length;
     const reVoto = /(?:(?:(?<=\n)|(?<![\s\S]))[ \t]*VOTO\b[^\n]*(?=\n|(?![\s\S])))|(?<![\p{L}\p{N}_])[ÉEé]\s+o\s+(?:breve\s+)?relat[óo]rio(?![\p{L}\p{N}_])/giu;   // \b do Python é Unicode: sem o flag u o É inicial não tinha fronteira
     reVoto.lastIndex = fimR;
     const mv = reVoto.exec(it);
-    const fim = mv ? mv.index : Math.min(it.length, fimR + FATOS_MAX);
+    const fim = mv ? mv.index : fimR + cpSlice(it.slice(fimR), FATOS_MAX).length;   // FATOS_MAX em pontos de código; o índice segue em UTF-16
     const txt = stripChars(it.slice(fimR, fim), " \t\n:.-").replace(RE_LIXO_WORD, "").trim();
-    if (txt.length > 40 && !/relat[óo]rio\s+(?:formal\s+)?dispensad[oa]|dispensad[oa]\s+o\s+relat[óo]rio|dispens[ao]\s+o\s+relat[óo]rio/i.test(txt.slice(0, 200))) return ["relatório do acórdão", txt.slice(0, FATOS_MAX)];
+    if (cpLen(txt) > 40 && !/relat[óo]rio\s+(?:formal\s+)?dispensad[oa]|dispensad[oa]\s+o\s+relat[óo]rio|dispens[ao]\s+o\s+relat[óo]rio/i.test(cpSlice(txt, 200))) return ["relatório do acórdão", cpSlice(txt, FATOS_MAX)];
   }
   return null;
 }
@@ -957,7 +965,7 @@ export function relatorVencido(d) {
 export function linhaFatos(d) {
   const f = fatosDoJulgado(d.inteiro_teor_texto || "");
   if (!f) return "";
-  const ft = f[1].replace(/\s+/g, " ") + (f[1].length >= FATOS_MAX ? " […]" : "");
+  const ft = f[1].replace(/\s+/g, " ") + (cpLen(f[1]) >= FATOS_MAX ? " […]" : "");
   let aviso = "";
   if (f[0].startsWith("relatório")) {
     aviso = " ⚠️ É o relatório: narra o pedido e as alegações das partes, NÃO o fundamento nem o resultado; confira os dois no voto e no fecho.";
@@ -1060,8 +1068,14 @@ export function camposDeCustodia(d, origem = "decisao") {
     normalizacao: "trechos em bruto, recortados de `texto` — normalize com a sua própria função",
     sha256: crypto.createHash("sha256").update(texto, "utf-8").digest("hex"),
     versao_servidor: VERSAO,
-    obtido_em: new Date().toISOString().replace(/\.\d+Z$/, ""),
+    obtido_em: horaLocalIso(),   // v1.6.0: hora LOCAL sem fuso, como o Python (time.strftime)
   };
+}
+
+/** AAAA-MM-DDTHH:MM:SS na hora local, sem fuso (igual a time.strftime("%Y-%m-%dT%H:%M:%S") do Python). */
+export function horaLocalIso(dt = new Date()) {
+  const z = (n, w = 2) => String(n).padStart(w, "0");
+  return `${z(dt.getFullYear(), 4)}-${z(dt.getMonth() + 1)}-${z(dt.getDate())}T${z(dt.getHours())}:${z(dt.getMinutes())}:${z(dt.getSeconds())}`;
 }
 
 /** Recibo de DECISÃO (0600, escrita atômica; origem "decisao"): vem de obter_decisao_trf1 ou da verificação, que leram o número inteiro no
@@ -1072,8 +1086,17 @@ export function gravarRecibo(d, env = process.env) {
     const dir = DIR_RECIBOS(env);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     try { fs.chmodSync(dir, 0o700); } catch { /* melhor esforço */ }
+    const caminho = arqRecibo(String(d.id || ""), env);
+    // v1.6.0: regravar não pode PERDER o inteiro teor que um recibo anterior já tinha (download do eproc falhou, ou o documento caiu além do
+    // teto de 3): mescla o inteiro teor existente e recalcula texto/sha256 sobre o conteúdo final.
+    if (!(d.inteiro_teor_texto || d.inteiro_teor_embutido)) {
+      try {
+        const antigo = JSON.parse(fs.readFileSync(caminho, "utf-8"));
+        const itAntigo = antigo && typeof antigo === "object" ? antigo.inteiro_teor : "";
+        if (typeof itAntigo === "string" && pyStrip(itAntigo)) d = { ...d, inteiro_teor_texto: itAntigo };
+      } catch { /* sem recibo anterior, ou ilegível */ }
+    }
     const rec = camposDeCustodia(d, "decisao");
-    const caminho = arqRecibo(rec.id_documento, env);
     escreverJsonAtomico(caminho, rec);
     desindexarBusca(dir, [rec.id_documento]);
     return caminho;
@@ -1082,12 +1105,42 @@ export function gravarRecibo(d, env = process.env) {
   }
 }
 
-function escreverJsonAtomico(caminho, obj) {
+function removerTmp(tmp) { try { fs.unlinkSync(tmp); } catch { /* já não existe */ } }
+/** rename; no Windows (arquivo aberto por antivírus/indexador), até 3 tentativas com espera curta (v1.6.0). */
+export function substituirArquivo(tmp, destino) {
+  const tentativas = process.platform === "win32" ? 3 : 1;
+  for (let k = 0; k < tentativas; k++) {
+    try { fs.renameSync(tmp, destino); return; } catch (e) { if (k === tentativas - 1) throw e; dormirSync(50 * (k + 1)); }
+  }
+}
+
+/** Escreve JSON em arquivo 0600 por temporário + rename; devolve os bytes escritos. O temporário NUNCA fica para trás (try/finally).
+ *  `soCriar` (v1.6.0, recibo da busca): o alvo só pode ser CRIADO, jamais substituído — grava o tmp e faz link(tmp, alvo); EEXIST = "já existe",
+ *  devolve null sem gravar. Sem suporte a link no FS (alguns Windows), cai para open com flag "wx" escrevendo direto. */
+export function escreverJsonAtomico(caminho, obj, soCriar = false) {
   const tmp = `${caminho}.${process.pid}.tmp`;
   const bruto = JSON.stringify(obj);
-  fs.writeFileSync(tmp, bruto, { mode: 0o600 });
-  fs.renameSync(tmp, caminho);
-  return Buffer.byteLength(bruto, "utf-8");
+  try {
+    fs.writeFileSync(tmp, bruto, { mode: 0o600 });
+    if (soCriar) {
+      try {
+        fs.linkSync(tmp, caminho);
+      } catch (e) {
+        if (e.code === "EEXIST") return null;
+        try {
+          fs.writeFileSync(caminho, bruto, { mode: 0o600, flag: "wx" });
+        } catch (e2) {
+          if (e2.code === "EEXIST") return null;
+          throw e2;
+        }
+      }
+    } else {
+      substituirArquivo(tmp, caminho);
+    }
+    return Buffer.byteLength(bruto, "utf-8");
+  } finally {
+    removerTmp(tmp);
+  }
 }
 
 // --- Recibo gravado pela própria busca (porte do TJRO v1.31.0, H01) ---
@@ -1128,30 +1181,51 @@ function desindexarBusca(pasta, ids) {
   } catch { /* melhor esforço */ }
 }
 
-const bytesDoIndice = (v) => Math.trunc(Number((v || [0])[0] || 0)) || 0;
+/** Número tolerante do índice de poda (v1.6.0, igual ao Python): só número finito ou string numérica; o resto vale 0. */
+const numIndice = (x) => {
+  if (typeof x === "number") return Number.isFinite(x) ? Math.trunc(x) : 0;
+  if (typeof x === "string" && /^\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\s*$/.test(x)) { const v = Number(x); return Number.isFinite(v) ? Math.trunc(v) : 0; }
+  return 0;
+};
+/** [bytes, instante_ms] de uma entrada do índice; entrada malformada (escalar, `[bytes]` sem instante, lixo) não derruba a poda. */
+const entradaIndice = (v) => (Array.isArray(v) ? [v.length > 0 ? numIndice(v[0]) : 0, v.length > 1 ? numIndice(v[1]) : 0] : [0, 0]);
 
 /** Acima do teto saem os recibos de BUSCA mais antigos, até 80% do teto; nunca os de decisão (nem o arquivo que, apesar do índice, não
- *  traga origem "busca"). Devolve quantos removeu. */
+ *  traga origem "busca"). Devolve quantos removeu. v1.6.0: o arquivo é primeiro RENOMEADO para `<id>.json.podando`, relido e só apagado se a
+ *  origem for "busca" — um recibo de decisão gravado entre a leitura e o unlink não se perde (se não for "busca", volta). */
 export function podarRecibosDeBusca(pasta = null, maxBytes = null, env = process.env) {
   let removidos = 0;
   try {
     pasta = pasta || DIR_RECIBOS(env);
     const teto = maxBytes !== null && maxBytes !== undefined ? maxBytes : recibosBuscaMaxBytes(env);
     const idx = lerIndiceBusca(pasta);
-    let total = Object.values(idx).reduce((acc, v) => acc + bytesDoIndice(v), 0);
+    let total = Object.values(idx).reduce((acc, v) => acc + entradaIndice(v)[0], 0);
     if (total <= teto) return 0;
-    const instante = (v) => (v || [0, 0])[1] || 0;
-    for (const [ident, v] of Object.entries(idx).sort((a, b) => instante(a[1]) - instante(b[1]))) {
+    const ordem = Object.entries(idx).sort((a, b) => (entradaIndice(a[1])[1] - entradaIndice(b[1])[1]) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    for (const [ident, v] of ordem) {
       if (total <= teto * 0.8) break;
       const cam = path.join(pasta, String(ident).replace(/[^A-Za-z0-9]/g, "") + ".json");
+      const pod = cam + ".podando";
       try {
-        const r = JSON.parse(fs.readFileSync(cam, "utf-8"));
-        if (r && typeof r === "object" && !Array.isArray(r) && r.origem === "busca") {
-          fs.unlinkSync(cam);
+        fs.renameSync(cam, pod);
+        let ehBusca = false;
+        try {
+          const r = JSON.parse(fs.readFileSync(pod, "utf-8"));
+          ehBusca = Boolean(r && typeof r === "object" && !Array.isArray(r) && r.origem === "busca");
+        } catch { /* ilegível: não é "busca" */ }
+        if (ehBusca) {
+          fs.unlinkSync(pod);
           removidos++;
+        } else {
+          try {
+            fs.linkSync(pod, cam);   // volta sem sobrescrever o que a decisão tenha gravado nesse meio-tempo
+          } catch (e) {
+            if (e.code !== "EEXIST" && !fs.existsSync(cam)) fs.renameSync(pod, cam);
+          }
+          removerTmp(pod);
         }
-      } catch { /* já removido ou ilegível */ }
-      total -= bytesDoIndice(v);
+      } catch { /* já removido */ }
+      total -= entradaIndice(v)[0];
       delete idx[ident];
     }
     gravarIndiceBusca(pasta, idx);
@@ -1173,7 +1247,9 @@ export function gravarRecibosDaBusca(docs, pasta = null, env = process.env) {
       const alvo = path.join(pasta, String(d.id).replace(/[^A-Za-z0-9]/g, "") + ".json");
       if (fs.existsSync(alvo) || fs.existsSync(alvo + ".inconsistente")) continue;
       const rec = camposDeCustodia(d, "busca");
-      novos[rec.id_documento] = [escreverJsonAtomico(alvo, rec), Date.now()];
+      const tam = escreverJsonAtomico(alvo, rec, true);   // v1.6.0: só CRIA (um recibo de decisão gravado agora não é substituído)
+      if (tam === null) continue;
+      novos[rec.id_documento] = [tam, Date.now()];
       n++;
     }
     if (n) {
@@ -1186,19 +1262,29 @@ export function gravarRecibosDaBusca(docs, pasta = null, env = process.env) {
   return n;
 }
 
+/** sha256 divergente ou JSON inválido = corrupção/edição → posto de lado (.inconsistente), null. v1.6.0: erro de E/S (permissão, disco, arquivo
+ *  preso) devolve null SEM renomear — recibo válido não vai para quarentena por falha de leitura. A quarentena nunca apaga uma quarentena
+ *  anterior (sufixo com o instante se o nome já existe). */
 export function lerRecibo(ident, env = process.env) {
   const caminho = arqRecibo(ident, env);
+  let texto;
+  try {
+    texto = fs.readFileSync(caminho, "utf-8");
+  } catch (e) {
+    return null;   // ENOENT: não há recibo; qualquer outro erro de E/S: não é prova de corrupção
+  }
   let rec, ok;
   try {
-    rec = JSON.parse(fs.readFileSync(caminho, "utf-8"));
+    rec = JSON.parse(texto);
     ok = rec && typeof rec === "object" && typeof rec.texto === "string" &&
       crypto.createHash("sha256").update(rec.texto, "utf-8").digest("hex") === rec.sha256;
-  } catch (e) {
-    if (e.code === "ENOENT") return null;
+  } catch {
     ok = false;
   }
   if (ok) return rec;
-  try { fs.renameSync(caminho, caminho + ".inconsistente"); } catch { /* melhor esforço */ }
+  let destino = caminho + ".inconsistente";
+  if (fs.existsSync(destino)) destino = `${destino}.${Date.now()}`;
+  try { fs.renameSync(caminho, destino); } catch { /* melhor esforço */ }
   return null;
 }
 
@@ -1248,7 +1334,11 @@ export function citacao(d) {
   return "(" + partes.join(", ") + ")";
 }
 
-export function nivelVerificacao(d, cortado = false) {
+/** `exibido`: "completo" (padrão), "lista" (a lista da busca mostra só ementa e trecho do dispositivo) ou "triagem" (nada do inteiro teor aparece).
+ *  v1.6.0: o nível reflete o que foi EXIBIDO. */
+export function nivelVerificacao(d, cortado = false, exibido = "completo") {
+  if (exibido === "triagem") return "triagem — nada lido; reabra no modo completo para citar";
+  if (exibido === "lista") return "só ementa/índice";
   if (d.inteiro_teor_texto || d.inteiro_teor_embutido) return cortado ? "inteiro teor lido EM PARTE" : "inteiro teor lido";
   return "só ementa/índice";
 }
@@ -1480,7 +1570,7 @@ export function formatBusca(docs, total, meta) {
     if (d.data_publicacao) metaL.push(`Publicação: ${d.data_publicacao}`);
     if (d.fonte_publicacao) metaL.push(`Fonte: ${d.fonte_publicacao}`);
     linhas.push("  " + metaL.join(" · "));
-    linhas.push(`  Citação: ${citacaoComLink(d)} — verificação: ${nivelVerificacao(d)}`);
+    linhas.push(`  Citação: ${citacaoComLink(d)} — verificação: ${nivelVerificacao(d, false, "lista")}`);
     if (rec !== null) linhas.push(`  🆕 JULGADO RECENTE (${rec} dia(s)): pode ainda não ter sido publicado e cabe embargos de declaração; confira a publicação antes de citar.`);
     const vot = votacaoDoDocumento(d);
     if (vot) linhas.push(`  🗳️ Votação declarada no dispositivo: ${vot} (não diz quem foi o vencido; o voto vencido só se vê no inteiro teor)`);
@@ -1646,7 +1736,7 @@ export function formatTriagem(docs, numero, total) {
     if (vot) linhas.push(`- Votação declarada: ${vot}`);
     linhas.push("- Peças: " + ds.map((x) => `${x.tipo || "documento"} id ${x.id}` + (linkDocumentoEspecifico(x) ? ` (${linkDocumentoEspecifico(x)})` : "")).join(" · "));
     const cz = ds.some((x) => x.inteiro_teor_texto || x.inteiro_teor_embutido);
-    linhas.push(`- Citação: ${citacaoComLink(rep)} — verificação: ${nivelVerificacao(rep)}`);
+    linhas.push(`- Citação: ${citacaoComLink(rep)} — verificação: ${nivelVerificacao(rep, false, "triagem")}`);
     if (rep.decisao) linhas.push(`- Dispositivo (início, literal): «${trechoCentrado(rep.decisao, TRIAGEM_DISPOSITIVO_MAX)}»`);
     const te = teseDaEmenta(rep.ementa || "");
     if (te) linhas.push("- " + linhaTese(te));
@@ -1824,12 +1914,13 @@ function transacao(fn, obrigatoria = false) {
     }
     const estado = lerEstadoDisjuntor();
     const resultado = fn(estado);
+    const tmp = `${arquivoEstadoDisjuntor}.${process.pid}.tmp`;
     try {
-      const tmp = `${arquivoEstadoDisjuntor}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(estado));
-      fs.renameSync(tmp, arquivoEstadoDisjuntor);
+      substituirArquivo(tmp, arquivoEstadoDisjuntor);
       persistenciaIndisponivel = null;
     } catch (e) {
+      removerTmp(tmp);
       persistenciaIndisponivel = e.code || e.name || "EIO";
       if (obrigatoria) {
         throw new PesquisaNaoRealizada(
@@ -2005,8 +2096,12 @@ export function ritmoAnotar(tMs, op, res, status = null, durMs = null, arquivo =
     if (fs.statSync(arquivo).size > RITMO_TAMANHO_PARA_RODAR) {
       const linhas = fs.readFileSync(arquivo, "utf-8").split("\n").filter(Boolean);
       const tmp = `${arquivo}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, linhas.slice(-RITMO_MAX_LINHAS).join("\n") + "\n", { mode: 0o600 });
-      fs.renameSync(tmp, arquivo);
+      try {
+        fs.writeFileSync(tmp, linhas.slice(-RITMO_MAX_LINHAS).join("\n") + "\n", { mode: 0o600 });
+        substituirArquivo(tmp, arquivo);
+      } finally {
+        removerTmp(tmp);
+      }
     }
   } catch { /* o livro-razão nunca derruba uma consulta */ }
 }
@@ -2018,7 +2113,7 @@ export function ritmoLer(arquivo = null, env = process.env) {
       if (!linha) continue;
       let d;
       try { d = JSON.parse(linha); } catch { continue; }
-      if (d && typeof d === "object" && !Array.isArray(d) && typeof d.t === "number") out.push(d);
+      if (d && typeof d === "object" && !Array.isArray(d) && typeof d.t === "number" && Number.isFinite(d.t)) out.push(d);
     }
     return out.sort((a, b) => a.t - b.t);
   } catch {
@@ -2204,13 +2299,21 @@ export async function requisitar(jar, metodo, url, operacao, { data, headers = {
   // Content-Type — o eproc da TNU declara "charset= ISO-8859-1" (mojibake real, 23/09/2026:
   // acentos viravam replacement char e derrubavam o reconhecimento do fecho). Decodifica pelo
   // charset declarado; sem um TextDecoder reconhecido, cai para utf-8.
-  const buf = await r.arrayBuffer();
-  const mCharset = /charset\s*=\s*"?([\w-]+)"?/.exec(ctype);
+  // v1.6.0: a leitura do corpo (rede/timeout no meio dele) e o decode ficam DENTRO do try — viram PesquisaNaoRealizada, como no Python,
+  // e nunca "Erro de parâmetro (nada foi consultado)".
   let texto;
   try {
-    texto = new TextDecoder(mCharset ? mCharset[1] : "utf-8").decode(buf);
-  } catch {
-    texto = new TextDecoder("utf-8").decode(buf);
+    const buf = await r.arrayBuffer();
+    const mCharset = /charset\s*=\s*"?([\w-]+)"?/.exec(ctype);
+    try {
+      texto = new TextDecoder(mCharset ? mCharset[1] : "utf-8").decode(buf);
+    } catch {
+      texto = new TextDecoder("utf-8").decode(buf);
+    }
+  } catch (e) {
+    const causa = e.cause?.code || e.cause?.message || "";
+    ritmoAnotar(t0Ms, operacao, String(e.name || "").toLowerCase().includes("timeout") ? "timeout" : "rede", null, Date.now() - t0Ms, null, env);
+    throw new PesquisaNaoRealizada(`falha de rede ao ler a resposta do portal (${e.name}: ${e.message}${causa ? ` — causa: ${String(causa).slice(0, 120)}` : ""}) — tente de novo em instantes`);
   }
   const durMs = Date.now() - t0Ms;
   const env_ = envelope(texto);
@@ -2396,7 +2499,7 @@ export function erroDeParametro(e) {
 
 export function validarBase(base) {
   const b = (base || "trf1").trim().toLowerCase();
-  if (!(b in BASES)) throw new Error(`base inválida: ${JSON.stringify(base)}; use 'trf1' (padrão), 'tnu' ou 'colegiado'`);
+  if (!(b in BASES)) throw new ErroDeParametro(`base inválida: ${JSON.stringify(base)}; use 'trf1' (padrão), 'tnu' ou 'colegiado'`);
   return b;
 }
 export function validarTipos(tipo, base = "trf1") {
@@ -2407,37 +2510,38 @@ export function validarTipos(tipo, base = "trf1") {
   let tipos = (tipo && tipo.length ? tipo : ["ACORDAO"]).map((t) => String(t).toUpperCase().trim());
   tipos = tipos.map((t) => aliases[t] || t);
   const inv = tipos.filter((t) => !permitidos.includes(t));
-  if (inv.length) throw new Error(`tipo inválido para a base ${base}: ${JSON.stringify(inv)}; use ${JSON.stringify(permitidos)}`);
+  if (inv.length) throw new ErroDeParametro(`tipo inválido para a base ${base}: ${JSON.stringify(inv)}; use ${JSON.stringify(permitidos)}`);
   return [...new Set(tipos)];
 }
 export function validarTipoAcordao(tipoAcordao, base) {
   if (!tipoAcordao || !tipoAcordao.length) return [];
-  if (!BASES[base].tipoAcordao) throw new Error("tipo_acordao (REPRESENTATIVO/RELEVANTE) só existe na base 'tnu'");
+  if (!BASES[base].tipoAcordao) throw new ErroDeParametro("tipo_acordao (REPRESENTATIVO/RELEVANTE) só existe na base 'tnu'");
   const vals = tipoAcordao.map((t) => String(t).toUpperCase().trim());
   const inv = vals.filter((v) => !(v in TIPOS_ACORDAO_TNU));
-  if (inv.length) throw new Error(`tipo_acordao inválido: ${JSON.stringify(inv)}; use ${JSON.stringify(Object.keys(TIPOS_ACORDAO_TNU))}`);
+  if (inv.length) throw new ErroDeParametro(`tipo_acordao inválido: ${JSON.stringify(inv)}; use ${JSON.stringify(Object.keys(TIPOS_ACORDAO_TNU))}`);
   return [...new Set(vals)];
 }
 export function validarFontes(fonte) {
   const fontes = (fonte && fonte.length ? fonte : ["TRF1"]).map((f) => String(f).toUpperCase().trim());
   const inv = fontes.filter((f) => !FONTES_VALIDAS.includes(f));
-  if (inv.length) throw new Error(`fonte inválida: ${JSON.stringify(inv)}; use ${JSON.stringify(FONTES_VALIDAS)}`);
+  if (inv.length) throw new ErroDeParametro(`fonte inválida: ${JSON.stringify(inv)}; use ${JSON.stringify(FONTES_VALIDAS)}`);
   return [...new Set(fontes)];
 }
 
 export async function buscar(a, fetchImpl = fetch, env = process.env) {
   let base, tipos, fontes, tipoAcordaoV, pagina, porPagina, avancados = {}, consultaMontada;
   try {
+    validarTamanho("consulta", a.consulta);
     base = validarBase(a.base);
     tipos = validarTipos(a.tipo, base);
     fontes = BASES[base].fonte ? validarFontes(a.fonte) : [];
     tipoAcordaoV = validarTipoAcordao(a.tipo_acordao, base);
     const tipoData = a.tipo_data || "julgamento";
-    if (!(tipoData in { julgamento: 1, publicacao: 1 })) throw new Error(`tipo_data inválido: ${JSON.stringify(tipoData)}; use 'julgamento' ou 'publicacao'`);
+    if (!(tipoData in { julgamento: 1, publicacao: 1 })) throw new ErroDeParametro(`tipo_data inválido: ${JSON.stringify(tipoData)}; use 'julgamento' ou 'publicacao'`);
     pagina = Math.max(1, Number(a.pagina || 1));
     porPagina = Number(a.por_pagina || 30);
-    if (!POR_PAGINA_VALIDOS.includes(porPagina)) throw new Error(`por_pagina inválido: ${porPagina}; o portal aceita ${JSON.stringify(POR_PAGINA_VALIDOS)}`);
-    if (a.origem && validarOrigem(String(a.origem))) throw new Error(validarOrigem(String(a.origem)));
+    if (!POR_PAGINA_VALIDOS.includes(porPagina)) throw new ErroDeParametro(`por_pagina inválido: ${porPagina}; o portal aceita ${JSON.stringify(POR_PAGINA_VALIDOS)}`);
+    if (a.origem && validarOrigem(String(a.origem))) throw new ErroDeParametro(validarOrigem(String(a.origem)));
     for (const [chave, valor] of [["relator", a.relator], ["orgao_julgador", a.orgao_julgador], ["classe", a.classe],
       ["origem", a.origem], ["numero", a.numero], ["ementa_decisao", a.ementa_decisao], ["referencia_legislativa", a.referencia_legislativa]]) {
       if (valor && String(valor).trim()) avancados[chave] = String(valor).trim();
@@ -2445,11 +2549,11 @@ export async function buscar(a, fetchImpl = fetch, env = process.env) {
     if (a.data_inicio) avancados.data_inicio = normalizarData(String(a.data_inicio), "data_inicio");
     if (a.data_fim) avancados.data_fim = normalizarData(String(a.data_fim), "data_fim");
     if (Object.keys(avancados).length && !BASES[base].avancada) {
-      throw new Error(`filtros (relator, órgão, classe, número, datas…) só existem na base 'trf1'; na base '${base}' use a sintaxe de campo na consulta: nome[REL], "turma"[ORGA], 20240101[DTDP]`);
+      throw new ErroDeParametro(`filtros (relator, órgão, classe, número, datas…) só existem na base 'trf1'; na base '${base}' use a sintaxe de campo na consulta: nome[REL], "turma"[ORGA], 20240101[DTDP]`);
     }
     consultaMontada = montarConsulta(a.consulta, a.grupos);
     if (!consultaMontada && !Object.keys(avancados).length && !tipoAcordaoV.length) {
-      throw new Error("Informe a consulta, ou grupos de termos, ou pelo menos um filtro.");
+      throw new ErroDeParametro("Informe a consulta, ou grupos de termos, ou pelo menos um filtro.");
     }
     const dados = await consultarPortal(consultaMontada, tipos, fontes, pagina, porPagina, avancados, tipoData, "busca", base, tipoAcordaoV, fetchImpl, env);
     gravarRecibosDaBusca(dados.docs, null, env);   // v1.6.0 (porte do TJRO v1.31, H01): a lista já trouxe o texto; guardar evita reabrir o número só para citar
@@ -2458,9 +2562,9 @@ export async function buscar(a, fetchImpl = fetch, env = process.env) {
     return limitarSaidaBusca(formatBusca(dados.docs, dados.total, meta), SAIDA_MAX_CHARS, pagina, porPagina) + linhaDeRitmo();
   } catch (e) {
     if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(String(e.message).trim().replace(/\.+$/, "") + dicaConsultaGrande(e.message, consultaMontada || "", a.grupos));
-    if (e.__isParametro) return erroDeParametro(e);
-    // erros de validação (throw new Error simples, antes de qualquer rede) são de parâmetro
-    return erroDeParametro(e);
+    // v1.6.0: só erro de validação é de parâmetro; o resto (rede, timeout na leitura do corpo, bug) é pesquisa NÃO realizada
+    if (e instanceof ErroDeParametro) return erroDeParametro(e);
+    return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
 }
 
@@ -2500,7 +2604,7 @@ export async function obterDecisao(numero, base = "trf1", modo = "completo", fet
     }
   } catch (e) {
     if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(e.message);
-    if (e instanceof Error && /base inválida/.test(e.message)) return erroDeParametro(e);
+    if (e instanceof ErroDeParametro) return erroDeParametro(e);
     return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
   const gravados = docs.map((d) => gravarRecibo(d, env)).filter(Boolean);
@@ -2515,6 +2619,7 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
   const digitos = soDigitos(numero);
   if (digitos.length < 7) return `Número muito curto para localizar com segurança: ${JSON.stringify(numero)}.`;
   if (!(trecho || "").trim()) return "Informe o trecho que pretende citar entre aspas.";
+  try { validarTamanho("trecho", trecho); } catch (e) { return erroDeParametro(e); }
   let origem = "portal", dados = {}, docs = [], soBusca = false;
   try {
     base = validarBase(base);
@@ -2547,7 +2652,7 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
         ? ". Só há recibos de BUSCA para este número, e o trecho não está neles: isso não prova que esteja fora do processo, " +
           "porque a busca traz só os documentos que casaram" : ""));
     }
-    if (e instanceof Error && /base inválida/.test(e.message)) return erroDeParametro(e);
+    if (e instanceof ErroDeParametro) return erroDeParametro(e);
     return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
   if (!docs.length) return `Nenhum documento sob o número ${numero} na base ${base} — não há como verificar; não cite.`;
@@ -2717,6 +2822,7 @@ export function rankearPorConsulta(consulta, recibos, limite = 10) {
 
 export function buscarRecibos(a = {}, env = process.env) {
   const { consulta, grupos, limite = 10, pasta = null, nr_processo: nrProcesso = "", id_documento: idDocumento = "", relator = "", base = "" } = a;
+  validarTamanho("consulta", consulta);
   const palavras = norm(String(consulta || "")).split(/[^a-z0-9*$]+/).filter((p) => p && p.replace(/[*$]+$/, "") && !STOP_RECIBOS.has(p.replace(/[*$]+$/, "")));
   const gs = [];
   if (Array.isArray(grupos)) {
@@ -2773,8 +2879,8 @@ export function buscarRecibos(a = {}, env = process.env) {
       : `**Recibos locais do TRF1/TNU — ${achados.length} de ${totalGeral} documento(s) já lidos nesta máquina atendem a «${termosMostrados}»` +
         `${filtroTxt ? " em " + filtroTxt : ""} · ZERO requisição ao portal**`),
     "⚠️ Isto NÃO é pesquisa no acervo do CJF: só olha o que a busca e obter_decisao_trf1 já trouxeram para esta máquina. Zero aqui NUNCA é " +
-      "\"não localizado\" — para isso, buscar_jurisprudencia_trf1. Recibo da base trf1 guarda ementa e dispositivo (sem voto); o inteiro teor só existe nos da TNU " +
-      "lidos por obter_decisao_trf1. Recibo de BUSCA guarda só o que a lista trouxe (na TNU, sem inteiro teor) e não prova que o processo esteja completo.",
+      "\"não localizado\" — para isso, buscar_jurisprudencia_trf1. Recibo da base trf1 guarda ementa e dispositivo (sem voto); o inteiro teor só existe nos recibos da TNU " +
+      "(lidos por obter_decisao_trf1) e do colegiado (embutido no resultado). Recibo de BUSCA guarda só o que a lista trouxe (na TNU, sem inteiro teor) e não prova que o processo esteja completo.",
     "",
   ];
   if (!todos.length) linhas.push(`_(nenhum recibo em ${pasta || DIR_RECIBOS(env)})_`);
@@ -2787,7 +2893,7 @@ export function buscarRecibos(a = {}, env = process.env) {
     const pat = resP.length ? resP[0] : resG.length ? resG[0][0] : null;
     const tre = trechoEmVolta(r.inteiro_teor || r.texto, r._tn, pat);
     if (tre) linhas.push(`   «…${tre}…»`);
-    const cust = r.inteiro_teor_incluido ? "inteiro teor da TNU incluído" : "só ementa/dispositivo (sem voto)";
+    const cust = r.inteiro_teor_incluido ? `inteiro teor ${(BASES[r.base || "trf1"] || BASES.trf1).rotulo} incluído` : "só ementa/dispositivo (sem voto)";
     const orig = r.origem === "busca" ? "da busca" : "de decisão (obter_decisao_trf1)";
     linhas.push(`   recibo ${orig}, lido do portal em ${String(r.obtido_em || "?").slice(0, 16).replace("T", " ")} · ${cust}`);
   });
@@ -3054,7 +3160,7 @@ export function janelasDestacadas(d, antes = 300, depois = 220, maximo = 2) {
 
 const paraInt = (v, rotulo) => {
   const n = Math.trunc(Number(v));
-  if (!Number.isFinite(n)) throw new Error(`invalid literal for int() with base 10: ${JSON.stringify(String(v))} (${rotulo})`);
+  if (!Number.isFinite(n)) throw new ErroDeParametro(`invalid literal for int() with base 10: ${JSON.stringify(String(v))} (${rotulo})`);
   return n;
 };
 
@@ -3063,10 +3169,11 @@ export async function julgadosQueCitam(a = {}, fetchImpl = fetch, env = process.
   try {
     base = validarBase(a.base);
     dig = soDigitos(a.numero);
-    if (dig.length < 15) throw new Error("informe o número do processo citado com pelo menos 15 dígitos (CNJ de 20 dígitos, com ou sem máscara; ou o número antigo do Pedilef)");
+    if (dig.length < 15) throw new ErroDeParametro("informe o número do processo citado com pelo menos 15 dígitos (CNJ de 20 dígitos, com ou sem máscara; ou o número antigo do Pedilef)");
     limite = Math.max(1, Math.min(paraInt(a.limite || 10, "limite"), 30));
   } catch (e) {
-    return erroDeParametro(e);
+    if (e instanceof ErroDeParametro) return erroDeParametro(e);
+    return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
   try {
     const formas = dig.length === 20 ? [cnj(dig), dig] : [dig];
@@ -3115,17 +3222,19 @@ export async function linhaDoTempo(a = {}, fetchImpl = fetch, env = process.env)
   let consultaM, ai, af, tipos, fontes;
   const orgao = a.orgao_julgador;
   try {
+    validarTamanho("consulta", a.consulta);
     consultaM = montarConsulta(a.consulta || "", a.grupos);
-    if (!consultaM) throw new Error("informe `consulta` ou `grupos`: a linha do tempo precisa de uma tese");
+    if (!consultaM) throw new ErroDeParametro("informe `consulta` ou `grupos`: a linha do tempo precisa de uma tese");
     const hoje = new Date().getFullYear();
     af = paraInt(a.ano_fim || hoje, "ano_fim");
     ai = paraInt(a.ano_inicio || (af - 4), "ano_inicio");
-    if (ai > af || ai < 1989 || af > hoje + 1) throw new Error(`anos inválidos (${ai}–${af})`);
-    if (af - ai + 1 > ANOS_TIMELINE_MAX) throw new Error(`no máximo ${ANOS_TIMELINE_MAX} anos por chamada (cada ano gasta 3 a 4 requisições ao portal); recebi ${af - ai + 1}`);
+    if (ai > af || ai < 1989 || af > hoje + 1) throw new ErroDeParametro(`anos inválidos (${ai}–${af})`);
+    if (af - ai + 1 > ANOS_TIMELINE_MAX) throw new ErroDeParametro(`no máximo ${ANOS_TIMELINE_MAX} anos por chamada (cada ano gasta 3 a 4 requisições ao portal); recebi ${af - ai + 1}`);
     tipos = validarTipos(["ACORDAO"], "trf1");
     fontes = validarFontes(null);
   } catch (e) {
-    return erroDeParametro(e);
+    if (e instanceof ErroDeParametro) return erroDeParametro(e);
+    return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
   const filtros = `${consultaM} · ${ai}–${af}` + (orgao ? ` · órgão: ${orgao}` : "");
   const linhas = [];
