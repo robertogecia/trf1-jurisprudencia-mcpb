@@ -8,6 +8,12 @@ import { fileURLToPath } from "node:url";
 import * as lib from "../server/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Rede de segurança (v1.6.0): a busca grava recibo e o livro-razão grava requisição. Nenhum teste toca a pasta real (~/.trf1-jurisprudencia-recibos)
+// nem o arquivo real (~/.trf1-jurisprudencia-ritmo.jsonl): o que não passar `env` próprio cai nestas pastas temporárias.
+const TMP_SEGURO = fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-teste-"));
+process.env.TRF1_MCP_DIR_RECIBOS = path.join(TMP_SEGURO, "recibos");
+process.env.TRF1_MCP_ARQUIVO_RITMO = path.join(TMP_SEGURO, "ritmo.jsonl");
+process.on("exit", () => { try { fs.rmSync(TMP_SEGURO, { recursive: true, force: true }); } catch { /* melhor esforço */ } });
 const fx = path.join(__dirname, "fixtures");
 const ler = (nome, enc = "utf-8") => fs.readFileSync(path.join(fx, nome), enc);
 
@@ -714,13 +720,15 @@ test("v1.6.0 (7/8/2) fluxo de buscar com portal simulado: consulta grande, saíd
   lib._setArquivoEstadoParaTeste(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-fluxo-")), "estado.json"));
   t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); });
   lib._resetDisjuntorParaTeste();
+  const envT = { TRF1_MCP_DIR_RECIBOS: fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-recibos-")) };   // a busca grava recibo: nunca na pasta real
+  t.after(() => fs.rmSync(envT.TRF1_MCP_DIR_RECIBOS, { recursive: true, force: true }));
   // 500 do portal: PESQUISA NÃO REALIZADA com o tamanho da consulta
-  const e500 = await lib.buscar({ grupos: [["a", "b"], ["c"], ["d", "e", "f"]] }, portalFalso({ status500: true }));
+  const e500 = await lib.buscar({ grupos: [["a", "b"], ["c"], ["d", "e", "f"]] }, portalFalso({ status500: true }), envT);
   assert.ok(e500.startsWith("[PESQUISA NÃO REALIZADA") && e500.includes("3 grupo(s) e 6 termo(s)") && e500.includes("divida em duas buscas"), e500);
   lib._resetDisjuntorParaTeste();
   // saída grande: 60 documentos pedidos como página de 50 -> corta no limite de um resultado, mantém o resumo, tira a próxima página
   const htmlDocs = lib.extrairUpdate(ler("02_busca_dano_moral.xml"), "formulario") + lib.extrairUpdate(ler("04_pagina2.xml"), "formulario:tabelaDocumentos");
-  const gr = await lib.buscar({ consulta: "dano moral", por_pagina: 50 }, portalFalso({ htmlDocsPagina: htmlDocs }));
+  const gr = await lib.buscar({ consulta: "dano moral", por_pagina: 50 }, portalFalso({ htmlDocsPagina: htmlDocs }), envT);
   assert.ok(gr.includes("Consulta pouco seletiva (25943 documentos)"), gr.slice(0, 400));
   assert.ok(gr.includes("SAÍDA CORTADA:") && gr.includes("resultados cabem aqui") && gr.includes("por_pagina=10 e pagina=1") && !gr.includes("Próxima página"), gr.slice(-900));
   assert.ok(gr.trimEnd().endsWith("Se o seu roteiro tem teto por frente, conte as suas chamadas: este número só diz o fôlego do limitador._"));
@@ -782,4 +790,386 @@ test("v1.6.0 (11) TESE DA EMENTA: corte acima de 1.000 caracteres igual ao rfind
   const t1 = lib.teseDaEmenta(tesePt(lib.TESE_MAX - 1)), t2 = lib.teseDaEmenta(tesePt(lib.TESE_MAX)), t3 = lib.teseDaEmenta(tesePt(lib.TESE_MAX - 2));
   assert.ok(t1.texto.length === lib.TESE_MAX && t1.texto.endsWith("a.") && !t1.completa, String(t1.texto.length));   // ponto em teto-1: entra
   assert.ok(t2.texto === "Frase um." && t3.texto.length === lib.TESE_MAX - 1, `${t2.texto.slice(0, 20)} ${t3.texto.length}`);   // ponto em teto: fica de fora
+});
+
+// ================================================ v1.6.0 lote 2 (paridade com o selftest "v1.6.0" do Python) ===
+const docsDoFixture = (nome, base, comp = "formulario") => lib.parsearDocumentos(lib.extrairUpdate(ler(nome), comp), base);
+const pastaTmp = (t, prefixo = "trf1-mcpb-l2-") => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), prefixo));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+};
+const sha = (arq) => crypto.createHash("sha256").update(fs.readFileSync(arq)).digest("hex");
+const respXml = (corpo) => new Response(corpo, { status: 200, headers: { "content-type": "text/xml;charset=UTF-8" } });
+// portal simulado POR NÚMERO: formulário (GET), painel avançado (POST ckbAvancada), busca (POST) e o inteiro teor do eproc da TNU (GET)
+function portalNumero({ falha = false } = {}) {
+  const chamadas = [];
+  const f = async (url, init = {}) => {
+    chamadas.push(`${init.method || "GET"} ${url}`);
+    if (falha) return new Response("<html>erro</html>", { status: 500, headers: { "content-type": "text/html" } });
+    const get = !init.method || init.method === "GET";
+    const tnu = /\/tnu\//.test(url);
+    if (get) {
+      if (/eproctnu/.test(url)) return new Response(fs.readFileSync(path.join(fx, "12_tnu_inteiro_teor.html")), { status: 200, headers: { "content-type": "text/html; charset=ISO-8859-1" } });
+      return new Response(ler(tnu ? "10_tnu_index.html" : "01_index.html"), { status: 200, headers: { "content-type": "text/html;charset=UTF-8" } });
+    }
+    if (!/actPesquisar/.test(String(init.body || "")) && /ckbAvancada/.test(String(init.body || ""))) return respXml(ler("05_ckbavancada.xml"));
+    return respXml(ler(tnu ? "11_tnu_busca.xml" : "02_busca_dano_moral.xml"));
+  };
+  f.chamadas = chamadas;
+  return f;
+}
+const comEstadoLimpo = (t) => {
+  const arqOrig = lib._arquivoEstadoAtual();
+  lib._setArquivoEstadoParaTeste(path.join(pastaTmp(t, "trf1-mcpb-l2-estado-"), "estado.json"));
+  t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); });
+  lib._resetDisjuntorParaTeste();
+};
+
+test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca sobrescreve, decisão promove", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const docs = docsDoFixture("02_busca_dano_moral.xml", "trf1");
+  const d0 = docs[0];
+  const CHAVES_ANTIGAS = ["id_documento", "nr_processo", "numero", "tribunal", "base", "tipo", "classe", "qualificacao", "data_julgamento", "data_publicacao", "orgao", "orgao_fonte",
+    "relator", "relator_texto", "url", "texto", "ementa", "dispositivo", "inteiro_teor_incluido", "inteiro_teor", "trechos_transcritos", "trecho_divergente", "trechos_obiter",
+    "normalizacao", "sha256", "versao_servidor", "obtido_em"];
+  assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
+  assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
+  assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.6.0");
+  const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
+  assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
+  const rb = lib.lerRecibo(db[0].id, env);
+  assert.ok(rb.origem === "busca" && !rb.texto.includes("«") && !rb.ementa.includes("«") && !rb.inteiro_teor_incluido);
+  assert.equal(fs.statSync(lib.arqRecibo(db[0].id, env)).mode & 0o777, 0o600);
+  const idx = lib.lerIndiceBusca(dir);
+  assert.deepEqual(Object.keys(idx).sort(), db.map((x) => x.id).sort());
+  assert.ok(Object.values(idx).every((v) => v[0] > 100 && v[1] > 1e12));
+  // (a) a busca NUNCA sobrescreve; o recibo de decisão sobrescreve e promove
+  const h0 = sha(lib.arqRecibo(db[0].id, env));
+  assert.equal(lib.gravarRecibosDaBusca([{ ...db[0], ementa: "TEXTO NOVO diferente" }], null, env), 0);
+  assert.equal(sha(lib.arqRecibo(db[0].id, env)), h0);
+  assert.ok(lib.gravarRecibo({ ...docs[0], ementa: docs[0].ementa + " (relida)" }, env));
+  const rd0 = lib.lerRecibo(docs[0].id, env);
+  assert.ok(rd0.origem === "decisao" && rd0.ementa.endsWith("(relida)") && !(docs[0].id in lib.lerIndiceBusca(dir)));
+  assert.equal(lib.gravarRecibosDaBusca([{ ...docs[0], ementa: "de novo pela busca" }], null, env), 0);
+  assert.equal(lib.lerRecibo(docs[0].id, env).origem, "decisao");
+  // mesmo texto: busca e decisão guardam o MESMO `texto` (sem o destaque «»)
+  assert.equal(lib.lerRecibo(db[1].id, env).texto, lib.camposDeCustodia(docs[1]).texto);
+  // recibo antigo (sem `origem`) conta como decisão
+  const { origem: _o, ...antigo } = rd0;
+  assert.equal(lib.docDeRecibo(antigo, env).origem_recibo, "decisao");
+  assert.equal(lib.docDeRecibo(rb, env).origem_recibo, "busca");
+  // (e) buscar_recibos diz a origem de cada recibo
+  const brb = lib.buscarRecibos({ grupos: [["dano", "apelação", "recurso", "sentença", "turma", "relida"]], limite: 30 }, env);
+  assert.ok(brb.includes("recibo da busca") && brb.includes("recibo de decisão"), brb.slice(-700));
+  // documento sem texto ou sem id não vira recibo; id estranho é saneado no nome do arquivo
+  assert.equal(lib.gravarRecibosDaBusca([{ id: "", ementa: "x" }, { id: "Z1", ementa: "", decisao: "" }], null, env), 0);
+  assert.equal(lib.gravarRecibosDaBusca([{ ...d0, id: "../../etc/passwd" }], null, env), 1);
+  assert.ok(fs.existsSync(path.join(dir, "etcpasswd.json")));
+});
+
+test("v1.6.0 L2 (1b) poda dos recibos de busca: os mais antigos saem, os de decisão nunca; teto por env", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const docs = docsDoFixture("02_busca_dano_moral.xml", "trf1");
+  const ds = Array.from({ length: 5 }, (_, k) => ({ ...docs[k], id: `P${k}` }));
+  assert.equal(lib.gravarRecibosDaBusca(ds, null, env), 5);
+  const ix = lib.lerIndiceBusca(dir);
+  for (let k = 0; k < 5; k++) ix[`P${k}`][1] = 1000 + k;   // P0 o mais antigo
+  assert.ok(lib.gravarRecibo({ ...docs[5], id: "Z9" }, env));
+  ix.Z9 = [100, 1];   // a mais antiga de todas, mas é recibo de decisão: não pode sair
+  lib.gravarIndiceBusca(dir, ix);
+  const tot = Object.values(ix).reduce((s, v) => s + v[0], 0);
+  assert.equal(lib.podarRecibosDeBusca(dir, tot * 10), 0);
+  const n = lib.podarRecibosDeBusca(dir, Math.floor(tot * 0.5));
+  assert.ok(n >= 2 && !fs.existsSync(lib.arqRecibo("P0", env)) && !fs.existsSync(lib.arqRecibo("P1", env)) && fs.existsSync(lib.arqRecibo("P4", env)), String(n));
+  assert.ok(fs.existsSync(lib.arqRecibo("Z9", env)) && lib.lerRecibo("Z9", env).origem === "decisao" && !("Z9" in lib.lerIndiceBusca(dir)));
+  // o índice aponta para um arquivo que (apesar do índice) não é de busca: não é apagado
+  const ix2 = lib.lerIndiceBusca(dir); ix2.Z9 = [10 ** 9, 1]; lib.gravarIndiceBusca(dir, ix2);
+  lib.podarRecibosDeBusca(dir, 1000);
+  assert.ok(fs.existsSync(lib.arqRecibo("Z9", env)));
+  // teto: padrão 300 MB, mínimo 10 MB, lixo volta ao padrão
+  assert.equal(lib.recibosBuscaMaxBytes({}), 300 * 1024 * 1024);
+  assert.equal(lib.recibosBuscaMaxBytes({ TRF1_MCP_RECIBOS_BUSCA_MAX_MB: "500" }), 500 * 1024 * 1024);
+  assert.equal(lib.recibosBuscaMaxBytes({ TRF1_MCP_RECIBOS_BUSCA_MAX_MB: "abc" }), 300 * 1024 * 1024);
+  assert.equal(lib.recibosBuscaMaxBytes({ TRF1_MCP_RECIBOS_BUSCA_MAX_MB: "1" }), 10 * 1024 * 1024);
+  // o diagnóstico conta os de busca e diz o teto
+  assert.equal(lib.gravarRecibosDaBusca([{ ...docs[7], id: "Q1" }], null, env), 1);
+  const env0 = process.env.TRF1_MCP_DIR_RECIBOS; process.env.TRF1_MCP_DIR_RECIBOS = dir;
+  try { assert.match(lib.diagnosticoRitmo(), /Recibos gravados em .*: \d+ \(\d+ de busca, sujeitos ao teto de 300 MB; os demais, de decisão\)/); }
+  finally { process.env.TRF1_MCP_DIR_RECIBOS = env0; }
+});
+
+test("v1.6.0 L2 (1c) buscar com portal simulado grava os recibos da página (origem busca)", async (t) => {
+  comEstadoLimpo(t);
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const docs = docsDoFixture("02_busca_dano_moral.xml", "trf1");
+  const out = await lib.buscar({ consulta: "dano moral" }, portalNumero(), env);
+  assert.ok(out.includes("documento(s)"), out.slice(0, 300));
+  assert.equal(Object.keys(lib.lerIndiceBusca(dir)).length, docs.length);
+  assert.equal(lib.lerRecibo(docs[0].id, env).origem, "busca");
+});
+
+test("v1.6.0 L2 (1d) verificar_citacao com recibo de busca: TNU vai ao portal; trf1 vale se o trecho está; senão portal; portal fora = NÃO REALIZADA", async (t) => {
+  comEstadoLimpo(t);
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  // TNU: o recibo de busca NÃO tem inteiro teor -> vai ao portal, nunca conclui ❌ por falta de texto
+  const dTnu = docsDoFixture("11_tnu_busca.xml", "tnu")[0];
+  assert.equal(lib.gravarRecibosDaBusca([dTnu], null, env), 1);
+  assert.ok(!lib.lerRecibo(dTnu.id, env).inteiro_teor);
+  const trechoTnu = "A Turma Nacional de Uniformização decidiu, por unanimidade, CONHECER PARCIALMENTE do recurso";
+  const f1 = portalNumero();
+  const vt = await lib.verificarCitacao(dTnu.numero, trechoTnu, "tnu", f1, env);
+  assert.ok(f1.chamadas.length >= 3 && vt.includes("fonte: portal") && vt.includes("✅"), vt.slice(0, 400));
+  const rp = lib.lerRecibo(dTnu.id, env);
+  assert.ok(rp.origem === "decisao" && rp.inteiro_teor_incluido);   // o portal promoveu o recibo
+  lib._resetDisjuntorParaTeste();
+  const f2 = portalNumero();
+  const vt2 = await lib.verificarCitacao(dTnu.numero, trechoTnu, "tnu", f2, env);
+  assert.ok(f2.chamadas.length === 0 && vt2.includes("fonte: recibo local"), vt2.slice(0, 300));   // agora há recibo com inteiro teor: 0 requisições
+  // trf1: o recibo de busca vale quando o trecho está nele (0 requisições)
+  lib._resetDisjuntorParaTeste();
+  const d0 = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  const frase = d0.ementa.split(/\s+/).slice(0, 8).join(" ");
+  assert.equal(lib.gravarRecibosDaBusca([d0], null, env), 1);
+  const f3 = portalNumero();
+  const vb = await lib.verificarCitacao(d0.numero, frase, "trf1", f3, env);
+  assert.ok(f3.chamadas.length === 0 && vb.includes("recibo local (de busca; o processo pode ter outros documentos)") && vb.includes("✅"), vb.slice(0, 300));
+  // trf1: trecho que NÃO está no recibo de busca (ele guarda só o começo da ementa) -> ausência não se conclui; lê o número inteiro no portal
+  const dir2 = pastaTmp(t); const env2 = { TRF1_MCP_DIR_RECIBOS: dir2 };
+  const palavras = d0.ementa.split(/\s+/);
+  const final = palavras.slice(-9).join(" ");
+  assert.equal(lib.gravarRecibosDaBusca([{ ...d0, ementa: palavras.slice(0, 20).join(" "), decisao: "" }], null, env2), 1);
+  lib._resetDisjuntorParaTeste();
+  const f4 = portalNumero();
+  const vb2 = await lib.verificarCitacao(d0.numero, final, "trf1", f4, env2);
+  assert.ok(f4.chamadas.length >= 3 && vb2.includes("fonte: portal") && vb2.includes("✅ VÁLIDO"), vb2.slice(0, 400));
+  assert.equal(lib.lerRecibo(d0.id, env2).origem, "decisao");
+  // trf1 com recibo de DECISÃO: a ausência vale (comportamento anterior), sem portal
+  lib._resetDisjuntorParaTeste();
+  const f5 = portalNumero();
+  const vd = await lib.verificarCitacao(d0.numero, "frase que certamente não consta de nenhum documento deste processo", "trf1", f5, env2);
+  assert.ok(f5.chamadas.length === 0 && vd.includes("❌ NÃO ENCONTRADO") && vd.includes("fonte: recibo local"), vd.slice(0, 300));
+  // portal falha e só há recibo de busca: carimbo de pesquisa NÃO realizada que explica
+  const dir3 = pastaTmp(t); const env3 = { TRF1_MCP_DIR_RECIBOS: dir3 };
+  assert.equal(lib.gravarRecibosDaBusca([d0], null, env3), 1);
+  lib._resetDisjuntorParaTeste();
+  const vf = await lib.verificarCitacao(d0.numero, "trecho inexistente em qualquer lugar do processo todo aqui", "trf1", portalNumero({ falha: true }), env3);
+  assert.ok(vf.startsWith("[PESQUISA NÃO REALIZADA") && vf.includes("recibos de BUSCA") && !vf.includes("❌"), vf.slice(0, 500));
+});
+
+test("v1.6.0 L2 (2) buscar_recibos em linguagem natural: BM25 sobre a ementa, só quando o E de todas dá zero", (t) => {
+  assert.deepEqual(lib.palavrasBm25("O INSS negou o benefício de 2024 art. XII por falta de prova"), ["inss", "negou", "beneficio", "falta", "prova"]);
+  assert.deepEqual(lib.rankearPorConsulta("duas palavras", [{ id_documento: "1", ementa: "duas palavras" }]), []);
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const em = {
+    A1: ["Previdenciário. Pensão por morte. Filho maior inválido. Dependência econômica presumida relativa.", "10/03/2024"],
+    A2: ["Administrativo. Servidor público. Adicional de fronteira durante as férias. Indenização indevida.", "11/03/2024"],
+    A3: ["Processual civil. Mandado de segurança. Conflito de competência entre varas federais. Domicílio do impetrante.", "12/03/2024"],
+    A4: ["Previdenciário. Salário-maternidade. Adoção de adolescente. Prazo de cento e vinte dias.", "13/03/2024"],
+  };
+  for (const [id, [txt, dt]] of Object.entries(em)) {
+    lib.gravarRecibo({ id, base: "trf1", numero: "0000000-00.2020.4.01.0000", numero_digitos: "00000000020204010000", tipo: "Acórdão", relator: "FULANO",
+      orgao: "QUINTA TURMA", data_julgamento: dt, ementa: txt, decisao: "Nega provimento." }, env);
+  }
+  const nl = "o filho já adulto e inválido pediu a pensão de pai falecido provando que dependia dele";
+  const rn = lib.buscarRecibos({ consulta: nl, limite: 3 }, env);
+  assert.ok(rn.includes("nenhum dos 4 documento(s)") && rn.includes("MAIS delas") && rn.includes("BM25") && rn.includes("ZERO requisição"), rn.slice(0, 400));
+  assert.ok(rn.split("2. ")[0].includes("id A1"), rn);
+  assert.ok(!lib.buscarRecibos({ consulta: "pensão morte filho", limite: 3 }, env).includes("MAIS delas") && lib.buscarRecibos({ consulta: "pensão morte filho", limite: 3 }, env).includes("id A1"));   // E satisfeito: modo normal
+  assert.ok(!lib.buscarRecibos({ consulta: "pensão xyzzy", limite: 3 }, env).includes("MAIS delas") && lib.buscarRecibos({ consulta: "pensão xyzzy", limite: 3 }, env).includes("0 de 4"));   // menos de 3 palavras: nada de ranking
+  assert.ok(!lib.buscarRecibos({ grupos: [["pensão"], ["inexistentepalavra"]], limite: 3 }, env).includes("MAIS delas"));   // com `grupos` o ranking não entra
+  assert.ok(!lib.buscarRecibos({ consulta: "pensão filho zzzz yyyy", nr_processo: "0000000-00.2020", limite: 3 }, env).includes("MAIS delas"));   // com filtro de processo também não
+  const top = lib.rankearPorConsulta(nl, lib.listarRecibos(null, env), 10);
+  assert.ok(top[0][0].id_documento === "A1" && top.every((x) => Number.isInteger(x[1])));
+  // empate: data mais recente primeiro, depois id
+  const emp = [{ id_documento: "B", ementa: "pensão morte filho inválido", data_julgamento: "01/01/2020", texto: "x" },
+    { id_documento: "A", ementa: "pensão morte filho inválido", data_julgamento: "01/01/2021", texto: "x" },
+    { id_documento: "C", ementa: "pensão morte filho inválido", data_julgamento: "01/01/2021", texto: "x" }];
+  assert.deepEqual(lib.rankearPorConsulta("pensão morte filho inválido", emp, 10).map(([r]) => r.id_documento), ["A", "C", "B"]);
+});
+
+test("v1.6.0 L2 (3) modo triagem: bloco por julgamento, sem ementa nem inteiro teor; recibos gravados; modo inválido é erro de parâmetro", async (t) => {
+  comEstadoLimpo(t);
+  const docs = docsDoFixture("02_busca_dano_moral.xml", "trf1");
+  const d0 = docs[0];
+  const dTnu = { ...docsDoFixture("11_tnu_busca.xml", "tnu")[0], inteiro_teor_texto: tnuIt() };
+  lib.aplicarFecho(dTnu);
+  const tri = lib.formatTriagem([dTnu], dTnu.numero, 1);
+  const comp = lib.formatDecisao([dTnu], dTnu.numero, 1);
+  assert.ok(tri.includes("Triagem do número") && tri.includes("Resultado declarado: desprovido") && tri.includes("Votação declarada: unânime") && tri.includes("FATOS DO JULGADO"), tri.slice(0, 900));
+  assert.ok(tri.includes("Cita: Súmula 42 · Tema 692") && tri.includes(`id ${dTnu.id}`) && tri.includes("eproctnu-jur.cjf.jus.br") && tri.includes("verificação: inteiro teor lido"));
+  assert.ok(!tri.includes("Inteiro teor (literal") && !tri.includes("Ementa (integral") && tri.length < comp.length * 0.25, `${tri.length} ${comp.length}`);
+  const irmao = { ...d0, id: "999", tipo: "Decisão Monocrática", data_julgamento: "01/02/2025", decisao: "dou provimento ao recurso" };
+  const t2 = lib.formatTriagem([d0, irmao], d0.numero, 2);   // dois julgamentos de datas diferentes: dois blocos
+  assert.ok((t2.match(/\n### /g) || []).length === 2 && t2.includes("Sem inteiro teor nesta base"), t2.slice(0, 700));
+  const t3 = lib.formatTriagem([d0, { ...irmao, data_julgamento: d0.data_julgamento }], d0.numero, 2);   // mesmo julgamento: UM bloco com as duas peças e o aviso de opostos
+  assert.ok((t3.match(/\n### /g) || []).length === 1 && t3.includes("resultados opostos") && (t3.match(/ id /g) || []).length >= 2, t3.slice(0, 900));
+  assert.ok(lib.formatTriagem([], "123", 0).includes("Nenhum documento"));
+  // fluxo: obter_decisao em modo triagem (portal simulado) grava o recibo nos dois modos; modo inválido não consulta nada
+  const dir = pastaTmp(t); const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const f = portalNumero();
+  const st = await lib.obterDecisao(d0.numero, "trf1", "triagem", f, env);
+  assert.ok(st.includes("Triagem do número") && !st.includes("Ementa (integral") && lib.lerRecibo(d0.id, env).origem === "decisao", st.slice(0, 300));
+  lib._resetDisjuntorParaTeste();
+  assert.ok((await lib.obterDecisao(d0.numero, "trf1", undefined, portalNumero(), env)).includes("Ementa (integral"));
+  lib._resetDisjuntorParaTeste();
+  assert.ok((await lib.obterDecisao(d0.numero, "trf1", " COMPLETO ", portalNumero(), env)).includes("Ementa (integral"));
+  const f6 = portalNumero();
+  const inv = await lib.obterDecisao(d0.numero, "trf1", "resumo", f6, env);
+  assert.ok(inv.startsWith("Erro de parâmetro") && inv.includes("modo inválido: 'resumo'; use 'completo' ou 'triagem'") && f6.chamadas.length === 0, inv);
+  assert.deepEqual(lib.descreverArgs({ modo: "triagem" }), { modo: "triagem" });
+  assert.deepEqual(lib.descreverArgs({ modo: "Fulano" }), { modo: "<valor fora da lista>" });
+});
+
+test("v1.6.0 L2 (4) inteiro teor sem repetição (só TNU): ponteiro quando o texto está contido letra a letra", () => {
+  const EM = "PREVIDENCIÁRIO. PEDIDO DE UNIFORMIZAÇÃO. «incapacidade» preexistente ao reingresso no RGPS. Súmula 53 da TNU aplicada ao caso concreto, " +
+    "com divergência demonstrada entre o acórdão recorrido e o paradigma indicado pela parte requerente do pedido.";
+  const DEC = "A Turma Nacional de Uniformização decidiu, por unanimidade, conhecer do pedido e negar-lhe provimento, nos termos do voto do relator, " +
+    "ficando prejudicado o exame das demais questões suscitadas pela parte requerente nas razões do pedido de uniformização.";
+  const EM_LIMPA = EM.replace("«", "").replace("»", "");
+  const IT = "Documento:1\nTIMBRE\nRELATOR : Juiz Federal FULANO DE TAL\nRELATÓRIO\nTrata-se de pedido de uniformização contra acórdão da turma recursal que negou o benefício. É o relatório.\n" +
+    "EMENTA\n" + EM_LIMPA.replaceAll(". ", ".\n") + "\nVOTO\nNego provimento ao pedido porque a incapacidade é anterior.\n" +
+    "ACÓRDÃO\n" + DEC.replaceAll(", ", ",\n") + "\nBrasília, 14 de maio de 2025.\n";
+  const dTnu = docsDoFixture("11_tnu_busca.xml", "tnu")[0];
+  const dh = { ...dTnu, ementa: EM, decisao: DEC, inteiro_teor_texto: IT };
+  const sh = lib.formatDecisao([dh], dh.numero, 1);
+  assert.ok(!sh.includes("incapacidade» preexistente") && (sh.match(/Súmula 53 da TNU aplicada/g) || []).length === 1);   // a ementa só aparece no inteiro teor
+  assert.ok((sh.match(/texto idêntico a trecho do inteiro teor abaixo/g) || []).length === 2 && sh.includes(`(${lib.compacto(EM).length} caracteres)`) && sh.includes("começa em «PREVIDENCIÁRIO. PEDIDO DE UNIFORMIZAÇÃO.…»"), sh.slice(0, 1500));
+  assert.ok(sh.length < lib.formatDecisao([dh], dh.numero, 1, false).length - 200);
+  assert.ok(!lib.formatDecisao([dh], dh.numero, 1, false).includes("texto idêntico"));
+  assert.ok(sh.includes("— verificação: inteiro teor lido") && !sh.includes("lido EM PARTE") && sh.includes("Inteiro teor (literal, eproc da TNU)"));
+  // contenção é exata: palavra trocada ou caixa diferente -> o texto continua inteiro
+  const sEx = lib.formatDecisao([{ ...dh, inteiro_teor_texto: IT.replace("Súmula 53", "Súmula 54") }], "x", 1);
+  assert.ok(sEx.split("**Dispositivo")[0].includes("Súmula 53 da TNU aplicada"));
+  assert.ok((sEx.match(/texto idêntico a trecho do inteiro teor abaixo/g) || []).length === 1 && sEx.includes("Dispositivo: texto idêntico"));
+  const sCx = lib.formatDecisao([{ ...dh, inteiro_teor_texto: IT.replace("negar-lhe", "NEGAR-lhe") }], "x", 1);
+  assert.ok(sCx.split("**Inteiro teor")[0].includes("negar-lhe provimento") && sCx.includes("Ementa: texto idêntico"));
+  // texto curto não vira ponteiro; base trf1 (sem inteiro teor do eproc): nada muda
+  assert.ok(!lib.formatDecisao([{ ...dh, decisao: "Nego provimento.", ementa: "" }], "x", 1).split("**Inteiro teor")[0].includes("texto idêntico"));
+  assert.ok(!lib.formatDecisao([docsDoFixture("02_busca_dano_moral.xml", "trf1")[0]], "x", 1).includes("texto idêntico"));
+  // contagem em pontos de código (como o Python): emoji vale 1
+  assert.equal(lib.cpLen("a😀b"), 3);
+  assert.equal(lib.cpSlice("😀😀😀", 2), "😀😀");
+  assert.equal(lib.ponteiroContido("x".repeat(100), "x".repeat(100), "Ementa"), "");   // abaixo de 150
+  // inteiro teor cortado pelo orçamento e trecho na parte não exibida: NÃO substitui
+  const ENCH = "palavra comum de enchimento. ";
+  const sl = lib.formatDecisao([{ ...dh, inteiro_teor_texto: "Documento:1\nRELATÓRIO\n" + ENCH.repeat(2000) + "\nEMENTA\n" + EM_LIMPA + "\nACÓRDÃO\n" + DEC }], "x", 1);
+  assert.ok(sl.includes("CORTADO") && !sl.includes("texto idêntico") && sl.includes("inteiro teor lido EM PARTE") && sl.split("**Inteiro teor")[0].includes("Súmula 53 da TNU aplicada"));
+  const sc = lib.formatDecisao([{ ...dh, inteiro_teor_texto: "Documento:1\nEMENTA\n" + EM_LIMPA + "\nACÓRDÃO\n" + DEC + "\n" + ENCH.repeat(2500) }], "x", 1);   // trecho na parte exibida, resto cortado
+  assert.ok(sc.includes("CORTADO") && (sc.match(/texto idêntico a trecho do inteiro teor abaixo/g) || []).length === 2 && sc.includes("lido EM PARTE"));
+});
+
+test("v1.6.0 L2 (5) livro-razão: formato, sanitização, 0600, rotação, tolerância de leitura, desligado sob o teste", (t) => {
+  const dir = pastaTmp(t);
+  const lr = path.join(dir, "ritmo.jsonl");
+  assert.equal(lib._setRitmoAtivoParaTeste(false), false);   // sob `node --test` o livro-razão nasce desligado
+  lib.ritmoAnotar(1_000, "busca", "ok", 200, 12.4, null, { TRF1_MCP_ARQUIVO_RITMO: lr });
+  assert.ok(!fs.existsSync(lr), "desligado: não grava");
+  lib.ritmoAnotar(1_700_000_000_000, "busca", "ok", 200, 12.4, lr);
+  lib.ritmoAnotar(1_700_000_001_500, "decisao zzz", "http_503", 503, null, lr);   // op fora do padrão vira "?"
+  lib.ritmoAnotar(1_700_000_003_000, "busca", "texto livre da busca", null, 5, lr);   // desfecho fora do padrão vira "inesperada"
+  lib.ritmoAnotar(1_700_000_004_000, "busca", "ok", 200, 12.5, lr);   // round() do Python: metade para o par
+  lib.ritmoAnotar(1_700_000_005_000, "busca", "ok", 200, 13.5, lr);
+  const lin = fs.readFileSync(lr, "utf8").split("\n").filter(Boolean).map((x) => JSON.parse(x));
+  assert.equal(fs.statSync(lr).mode & 0o777, 0o600);
+  assert.equal(lin.length, 5);
+  assert.deepEqual(Object.keys(lin[0]), ["t", "impl", "pid", "id", "op", "res", "status", "durMs"]);
+  assert.ok(lin[0].impl === "node" && lin[0].pid === process.pid && lin[0].t === 1_700_000_000_000 && lin[0].op === "busca" && lin[0].res === "ok" && lin[0].status === 200 && lin[0].durMs === 12);
+  assert.ok(lin[1].op === "?" && lin[1].res === "http_503" && lin[1].durMs === null && lin[2].res === "inesperada");
+  assert.ok(lin[3].durMs === 12 && lin[4].durMs === 14);
+  assert.ok(!fs.readFileSync(lr, "utf8").includes("zzz") && !fs.readFileSync(lr, "utf8").includes("texto livre"));
+  // identidade: personalizada quando TRF1_USER_AGENT está definido
+  lib.ritmoAnotar(1_700_000_006_000, "busca", "ok", 200, 1, lr, { TRF1_USER_AGENT: "x" });
+  assert.equal(JSON.parse(fs.readFileSync(lr, "utf8").trim().split("\n").pop()).id, "personalizada");
+  // leitura tolera linhas do outro porte, lixo e tipos errados
+  fs.appendFileSync(lr, '{"t":1700000007000,"impl":"py","pid":7,"id":"honesta","op":"busca","res":"ok","status":200,"durMs":30}\nlixo{\n{"t":"x"}\n[1]\n{"t":true}\n');
+  const lido = lib.ritmoLer(lr);
+  assert.ok(lido.length === 7 && lido.at(-1).impl === "py" && lido.every((x, i) => i === 0 || lido[i - 1].t <= x.t));
+  assert.deepEqual(lib.ritmoLer(path.join(dir, "nao-existe.jsonl")), []);
+  // rotação: acima de ~700 KB guarda só as últimas 3.000 linhas
+  const lr2 = path.join(dir, "rot.jsonl");
+  const modelo = JSON.stringify({ t: 2_000_000_000_000, impl: "py", pid: 1, id: "honesta", op: "busca", res: "ok", status: 200, durMs: 1 });
+  fs.writeFileSync(lr2, Array.from({ length: 7000 }, (_, k) => modelo.replace("2000000000000", String(2_000_000_000_000 + k * 1000))).join("\n") + "\n");
+  assert.ok(fs.statSync(lr2).size > 700_000);
+  lib.ritmoAnotar(2_100_000_000_000, "busca", "ok", 200, 1, lr2);
+  const rl = lib.ritmoLer(lr2);
+  assert.ok(rl.length === 3000 && rl.at(-1).t === 2_100_000_000_000 && rl[0].t === 2_000_000_000_000 + 4001 * 1000, `${rl.length}`);
+});
+
+test("v1.6.0 L2 (5b) análise do ritmo confere com a conta direta; relatório e recomendação; nunca altera parâmetro", () => {
+  let t = 1_800_000_000_000, semente = 7;
+  const rnd = () => { semente = (semente * 1664525 + 1013904223) % 4294967296; return semente / 4294967296; };   // gerador determinístico
+  const gaps = [800, 1200, 1600, 2500, 4000, 7000, 15000, 45000];
+  const falhas = ["bloqueio", "http_503", "timeout", "rede", "desafio"];
+  const seq = [];
+  for (let k = 0; k < 160; k++) {
+    t += gaps[Math.floor(rnd() * gaps.length)];
+    seq.push({ t, impl: k % 3 ? "py" : "node", pid: 1, id: "honesta", op: "busca", res: rnd() > 0.08 ? "ok" : falhas[Math.floor(rnd() * falhas.length)], status: 200, durMs: 5 });
+  }
+  const a = lib.analisarRitmo(seq, { agoraMs: t + 1000 });
+  assert.equal(a.n, 160);
+  assert.equal(a.falhas, seq.filter((r) => r.res !== "ok").length);
+  assert.equal(a.faixas.reduce((s, f) => s + f.reqs, 0), 159);
+  assert.equal(a.faixas.reduce((s, f) => s + f.falhas, 0), seq.slice(1).filter((r) => r.res !== "ok").length);
+  assert.ok([...a.porDesfecho.values()].reduce((s, v) => s + v, 0) === 160 && [...a.porOrigem.values()].reduce((s, v) => s + v, 0) === 160);
+  let melhor = 0;
+  for (let i = 0; i < seq.length; i++) {
+    for (let j = i; j < seq.length; j++) {
+      if (seq[j].t - seq[i].t > 60_000) break;
+      if (seq.slice(i, j + 1).every((x) => x.res === "ok")) melhor = Math.max(melhor, j - i + 1);
+    }
+  }
+  assert.ok(a.maxRajadaSemFalha === melhor && melhor > 0, `${a.maxRajadaSemFalha} ${melhor}`);
+  const f0 = a.faixas.find((f) => f.nome === "< 1,5 s");
+  assert.equal(f0.reqs, seq.slice(1).filter((r, k) => r.t - seq[k].t < 1500).length);
+  const pouco = lib.formatarRelatorioRitmo(lib.analisarRitmo(seq.slice(0, 40), { agoraMs: t }));
+  assert.ok(pouco.includes("Dados insuficientes: 40 requisições") && pouco.includes("Manter os parâmetros atuais") && pouco.includes("nada é alterado automaticamente"), pouco);
+  const ok = lib.formatarRelatorioRitmo(lib.analisarRitmo(seq, { agoraMs: t }));
+  assert.ok(ok.includes("| < 1,5 s |") && ok.includes("**Por desfecho:**") && ok.includes("node ") && ok.includes("Maior rajada em 60 s SEM falha") && ok.includes("Decisão sobre qualquer parâmetro é humana"));
+  assert.ok(!ok.includes("Dados insuficientes") && ok.includes("nunca texto de busca"));
+  assert.ok(lib.relatorioDeRitmo(1_800_000_000, "/nao/existe/vazio.jsonl").includes("0 requisições registradas"));
+});
+
+test("v1.6.0 L2 (5c) fim a fim: requisitar anota cada desfecho, sem URL, consulta nem número de processo", async (t) => {
+  comEstadoLimpo(t);
+  const dir = pastaTmp(t);
+  const lr = path.join(dir, "ritmo.jsonl");
+  const env = { TRF1_MCP_ARQUIVO_RITMO: lr };
+  const antes = lib._setRitmoAtivoParaTeste(true);
+  t.after(() => lib._setRitmoAtivoParaTeste(antes));
+  const resp = (status, texto, ctype = "text/html") => async () => new Response(texto, { status, headers: { "content-type": ctype } });
+  const lanca = (nome, msg) => async () => { const e = new Error(msg); e.name = nome; throw e; };
+  const casos = [[resp(200, "<html>javax.faces.ViewState</html>"), "ok"], [resp(503, "<html>erro</html>"), "http_503"], [resp(429, "<html>vazio</html>"), "http_429"],
+    [resp(200, "<html>Acesso bloqueado por suspeita de automação</html>"), "bloqueio"], [resp(403, "<html><title>Just a moment...</title></html>"), "desafio"],
+    [lanca("TimeoutError", "lento"), "timeout"], [lanca("TypeError", "fetch failed"), "rede"], [resp(200, "<html>sem formulario</html>"), "inesperada"]];
+  for (const [fetchImpl, esperado] of casos) {
+    lib._resetDisjuntorParaTeste();
+    try { await lib.requisitar(new lib.CookieJar(), "GET", "https://jurisprudencia.cjf.jus.br/trf1/index.xhtml?q=segredo-0001369-17.2017.4.01.3606", "busca", { esperado: "html" }, fetchImpl, env); }
+    catch (e) { assert.ok(e instanceof lib.PesquisaNaoRealizada || e instanceof lib.PortalRecusou || e instanceof lib.SessaoInvalida, String(e)); }
+    assert.equal(lib.ritmoLer(lr).at(-1).res, esperado);
+  }
+  lib._resetDisjuntorParaTeste();
+  const bruto = fs.readFileSync(lr, "utf8");
+  assert.ok(!bruto.includes("segredo") && !bruto.includes("0001369") && !bruto.includes("jurisprudencia.cjf") && bruto.split("\n").filter(Boolean).length === 8, bruto);
+  assert.equal(fs.statSync(lr).mode & 0o777, 0o600);
+  assert.ok(lib.relatorioDeRitmo(null, lr, env).includes("Relatório de ritmo do portal do CJF"));
+  assert.ok(lib.ritmoLer(lr).every((x) => x.impl === "node" && x.durMs !== undefined));
+});
+
+test("v1.6.0 L2 (6) decodeEntities como o html.unescape do Python (entidades nomeadas, numéricas sem ';' e legado)", () => {
+  const d = lib.decodeEntities;
+  assert.equal(d("Região &ndash; TRF4 &ldquo;ágil&rdquo; &hellip; &ordm; &sect;"), "Região – TRF4 “ágil” … º §");
+  assert.equal(d("&#233;&#xe9;&#233 &quot&amp;#38; &#38;amp; &ordmfoo &foo; &;"), "ééé \"&#38; &amp; ºfoo &foo; &;");
+  assert.equal(d("&#0;&#128;&#129;&#xD800;&#x110000;"), "�€\u0081��");
+});
+
+test("v1.6.0 L2 (7) a pasta real de recibos e o livro-razão real não são tocados pelos testes", () => {
+  assert.ok(process.env.TRF1_MCP_DIR_RECIBOS.startsWith(os.tmpdir()) || process.env.TRF1_MCP_DIR_RECIBOS.includes("trf1-mcpb-teste-"));
+  assert.ok(process.env.TRF1_MCP_ARQUIVO_RITMO.includes("trf1-mcpb-teste-"));
 });
