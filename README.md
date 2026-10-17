@@ -249,9 +249,21 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
   desligado, como o Python sob o `--selftest`, e nenhum teste toca a pasta real de recibos.
 - Fonte de verdade é sempre o servidor Python: mudança de comportamento entra lá primeiro.
 
+## Correções do red team (v1.6.0, lote 2, 17/10/2026)
+
+Mesmas correções do servidor Python, com teste de regressão em `test/lib.test.js`: (1) o nível "— verificação:" reflete o que foi exibido
+(triagem: "nada lido"; lista da busca: "só ementa/índice"); (2) o recibo da busca só é CRIADO (`link`/`wx`), nunca substitui um de decisão, e a poda
+renomeia para `.podando` antes de apagar; (3) regravar um recibo sem inteiro teor preserva o que ele já tinha; (4) erro de rede ou timeout na leitura
+do corpo é `[PESQUISA NÃO REALIZADA]`, e só `ErroDeParametro` vira "Erro de parâmetro"; (5) `decodeEntities` segue o `html.unescape` com a tabela completa
+(`server/entidades-html5.json`, gerada do Python; 8.710 casos, 0 diferenças); (6) erro de E/S na leitura não manda recibo válido para quarentena, e a
+quarentena não apaga outra; (7) `norm` deixou de ser quadrático e `consulta`/`trecho` têm teto de 5.000 caracteres; (8) índice de poda malformado
+tolerado igual nas duas implementações; (9) `.tmp` removido quando o rename falha (3 tentativas no Windows); (10) `t` não finito no livro-razão é
+ignorado; (11) `obtido_em` em hora local, `norm` unifica aspas curvas, `trechoCentrado`/`fatosDoJulgado` contam por ponto de código; (12) `buscar_recibos`
+rotula a base certa do inteiro teor.
+
 ## Testes
 
-`npm test` roda 70 casos, muitos contra os **mesmos fixtures reais** (respostas capturadas do
+`npm test` roda 82 casos, muitos contra os **mesmos fixtures reais** (respostas capturadas do
 portal do CJF) usados no `--selftest` do servidor Python — parsing de busca TRF1/TNU/colegiado,
 texto do inteiro teor, atribuição da frase (TRANSCRIÇÃO/VOTO DIVERGENTE/ALEGAÇÃO DA
 PARTE/ENTRE ASPAS/NEGAÇÃO), fecho da TNU com casos de divergência, recibos em disco (grava, lê,

@@ -260,7 +260,8 @@ test("formatBusca/formatDecisao — verificação, orgao_fonte, EM PARTE quando 
   assert.match(sd, /— verificação: inteiro teor lido/);
   assert.match(sd, /orgao_fonte: fecho/);
   const sb = lib.formatBusca([dTnu], 1, { base: "tnu", pagina: 1, por_pagina: 30 });
-  assert.match(sb, /— verificação: inteiro teor lido/);
+  assert.match(sb, /— verificação: só ementa\/índice/);   // v1.6.0: a lista da busca não exibe o inteiro teor, então não diz "lido"
+  assert.doesNotMatch(sb, /inteiro teor lido/);
   const dTrf1 = { id: "1", base: "trf1", numero: "1", numero_digitos: "1".repeat(20), ementa: "e", decisao: "d", campos: {} };
   const sd2 = lib.formatDecisao([dTrf1], "1", 1);
   assert.match(sd2, /— verificação: só ementa\/índice/);
@@ -1003,7 +1004,7 @@ test("v1.6.0 L2 (3) modo triagem: bloco por julgamento, sem ementa nem inteiro t
   const tri = lib.formatTriagem([dTnu], dTnu.numero, 1);
   const comp = lib.formatDecisao([dTnu], dTnu.numero, 1);
   assert.ok(tri.includes("Triagem do número") && tri.includes("Resultado declarado: desprovido") && tri.includes("Votação declarada: unânime") && tri.includes("FATOS DO JULGADO"), tri.slice(0, 900));
-  assert.ok(tri.includes("Cita: Súmula 42 · Tema 692") && tri.includes(`id ${dTnu.id}`) && tri.includes("eproctnu-jur.cjf.jus.br") && tri.includes("verificação: inteiro teor lido"));
+  assert.ok(tri.includes("Cita: Súmula 42 · Tema 692") && tri.includes(`id ${dTnu.id}`) && tri.includes("eproctnu-jur.cjf.jus.br") && tri.includes("verificação: triagem — nada lido; reabra no modo completo para citar") && !tri.includes("verificação: inteiro teor lido"));
   assert.ok(!tri.includes("Inteiro teor (literal") && !tri.includes("Ementa (integral") && tri.length < comp.length * 0.25, `${tri.length} ${comp.length}`);
   const irmao = { ...d0, id: "999", tipo: "Decisão Monocrática", data_julgamento: "01/02/2025", decisao: "dou provimento ao recurso" };
   const t2 = lib.formatTriagem([d0, irmao], d0.numero, 2);   // dois julgamentos de datas diferentes: dois blocos
@@ -1172,4 +1173,195 @@ test("v1.6.0 L2 (6) decodeEntities como o html.unescape do Python (entidades nom
 test("v1.6.0 L2 (7) a pasta real de recibos e o livro-razão real não são tocados pelos testes", () => {
   assert.ok(process.env.TRF1_MCP_DIR_RECIBOS.startsWith(os.tmpdir()) || process.env.TRF1_MCP_DIR_RECIBOS.includes("trf1-mcpb-teste-"));
   assert.ok(process.env.TRF1_MCP_ARQUIVO_RITMO.includes("trf1-mcpb-teste-"));
+});
+
+// ==================================================== red team (lote 2): correções v1.6.0 ===================================================
+const sha16 = (x) => crypto.createHash("sha256").update(x, "utf-8").digest("hex").slice(0, 16);
+
+test("red team L2 (1) o nível de verificação reflete o que foi EXIBIDO (triagem e lista da busca)", () => {
+  const d0 = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  const col = { ...d0, id: "COL1", base: "colegiado", inteiro_teor_embutido: "texto do inteiro teor do colegiado ".repeat(100) };
+  const sl = lib.formatBusca([col], 1, { base: "colegiado", pagina: 1, por_pagina: 30, consulta_montada: "x" });
+  assert.ok(sl.includes("— verificação: só ementa/índice") && !sl.includes("inteiro teor lido"), sl.slice(0, 700));
+  assert.ok(lib.formatDecisao([col], col.numero, 1).includes("— verificação: inteiro teor lido"));   // o modo completo continua como estava
+  const tri = lib.formatTriagem([col], col.numero, 1);
+  assert.ok(tri.includes("— verificação: triagem — nada lido; reabra no modo completo para citar") && !tri.includes("inteiro teor lido"), tri.slice(0, 600));
+  assert.equal(lib.nivelVerificacao(col, false, "lista"), "só ementa/índice");
+  assert.equal(lib.nivelVerificacao(col, true), "inteiro teor lido EM PARTE");
+});
+
+test("red team L2 (2) a busca só CRIA o recibo (corrida com o de decisão) e a poda não apaga o de decisão", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const d0 = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  const plano = { ...d0 };
+  let feito = false;
+  const comCorrida = { ...plano, get tipo() { if (!feito) { feito = true; lib.gravarRecibo(plano, env); } return plano.tipo; } };   // a decisão aparece DEPOIS do `exists` da busca
+  assert.equal(lib.gravarRecibosDaBusca([comCorrida], null, env), 0);
+  assert.equal(lib.lerRecibo(d0.id, env).origem, "decisao");
+  assert.ok(!Object.hasOwn(lib.lerIndiceBusca(dir), d0.id));
+  const alvo = path.join(dir, "X.json");
+  assert.ok(lib.escreverJsonAtomico(alvo, { a: 1 }, true) > 0);
+  assert.equal(lib.escreverJsonAtomico(alvo, { a: 2 }, true), null);
+  assert.deepEqual(JSON.parse(fs.readFileSync(alvo, "utf-8")), { a: 1 });
+  assert.deepEqual(fs.readdirSync(dir).filter((x) => x.endsWith(".tmp")), []);
+  // poda: recibo de decisão listado no índice sobrevive; o de busca sai; nada fica como .podando
+  lib.gravarRecibo({ ...d0, id: "DEC1" }, env);
+  assert.equal(lib.gravarRecibosDaBusca([{ ...d0, id: "BUS1" }], null, env), 1);
+  lib.gravarIndiceBusca(dir, { DEC1: [500, 1], BUS1: [500, 2] });
+  assert.equal(lib.podarRecibosDeBusca(dir, 100, env), 1);
+  assert.ok(lib.lerRecibo("DEC1", env) && lib.lerRecibo("BUS1", env) === null);
+  assert.deepEqual(fs.readdirSync(dir).filter((x) => x.endsWith(".podando")), []);
+});
+
+test("red team L2 (3) regravar o recibo sem inteiro teor não apaga o que ele já tinha", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const dTnu = { ...docsDoFixture("11_tnu_busca.xml", "tnu")[0], inteiro_teor_texto: tnuIt() };
+  lib.gravarRecibo(dTnu, env);
+  const r1 = lib.lerRecibo(dTnu.id, env);
+  assert.ok(r1 && r1.inteiro_teor && r1.inteiro_teor_incluido === true);
+  const { inteiro_teor_texto, ...semTeor } = dTnu;
+  lib.gravarRecibo(semTeor, env);
+  const r2 = lib.lerRecibo(dTnu.id, env);   // lerRecibo confere o sha256: hash coerente com o conteúdo final
+  assert.ok(r2 && r2.inteiro_teor === r1.inteiro_teor && r2.inteiro_teor_incluido === true && r2.texto === r1.texto && r2.origem === "decisao");
+});
+
+test("red team L2 (4) falha de rede/timeout na leitura do corpo é PESQUISA NÃO REALIZADA, nunca erro de parâmetro", async (t) => {
+  comEstadoLimpo(t);
+  const dir = pastaTmp(t);
+  const lr = path.join(dir, "ritmo.jsonl");
+  const env = { TRF1_MCP_DIR_RECIBOS: dir, TRF1_MCP_ARQUIVO_RITMO: lr };
+  const falhaNoCorpo = async () => {
+    const r = new Response("x", { status: 200, headers: { "content-type": "text/html" } });
+    r.arrayBuffer = async () => { const e = new Error("terminated"); e.name = "TimeoutError"; throw e; };
+    return r;
+  };
+  const b = await lib.buscar({ consulta: "dano moral" }, falhaNoCorpo, env);
+  assert.ok(b.startsWith("[PESQUISA NÃO REALIZADA") && !b.includes("Erro de parâmetro"), b.slice(0, 300));
+  const o = await lib.obterDecisao("0011441-43.2015.4.01.3500", "trf1", "completo", falhaNoCorpo, env);
+  assert.ok(o.startsWith("[PESQUISA NÃO REALIZADA") && !o.includes("Erro de parâmetro"), o.slice(0, 300));
+  // exceção que não é de validação, vinda de dentro do fluxo, também não vira erro de parâmetro
+  const quebrada = async () => { throw new TypeError("bug"); };
+  assert.ok((await lib.buscar({ consulta: "dano moral" }, quebrada, env)).startsWith("[PESQUISA NÃO REALIZADA"));
+  // validação continua sendo erro de parâmetro
+  assert.ok((await lib.buscar({ consulta: "x", base: "zzz" }, quebrada, env)).startsWith("Erro de parâmetro"));
+  assert.ok((await lib.buscar({ consulta: "x", por_pagina: 7 }, quebrada, env)).startsWith("Erro de parâmetro"));
+});
+
+test("red team L2 (5) decodeEntities: 8.710 casos gerados pelo html.unescape do Python, 0 diferenças", () => {
+  const f = JSON.parse(ler("entidades-html5-casos.json"));
+  assert.ok(f.casos.length >= 2000 && f.casos.length === f.esperado.length);
+  const dif = f.casos.filter((c, i) => lib.decodeEntities(c) !== f.esperado[i]);
+  assert.deepEqual(dif.slice(0, 5), []);
+  assert.equal(lib.decodeEntities("a &le; b &notin; c &NotEqualTilde; &lt &ltx; &amp"), "a ≤ b ∉ c ≂̸ < <x; &");
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "server", "entidades-html5.json")));   // vai no pacote .mcpb (não há lista de arquivos; só *.bak* é ignorado)
+});
+
+test("red team L2 (6) erro de E/S não põe recibo válido em quarentena; quarentena não apaga quarentena", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const d0 = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  lib.gravarRecibo(d0, env);
+  const cam = lib.arqRecibo(d0.id, env);
+  if (process.getuid && process.getuid() !== 0) {
+    fs.chmodSync(cam, 0);
+    try {
+      assert.equal(lib.lerRecibo(d0.id, env), null);
+      assert.ok(fs.existsSync(cam) && !fs.existsSync(cam + ".inconsistente"));
+    } finally { fs.chmodSync(cam, 0o600); }
+  }
+  assert.ok(lib.lerRecibo(d0.id, env));
+  for (const k of [1, 2]) {
+    fs.writeFileSync(cam, `{ruim ${k}`);
+    assert.equal(lib.lerRecibo(d0.id, env), null);
+  }
+  const q = fs.readdirSync(dir).filter((x) => x.includes(".inconsistente"));
+  assert.equal(q.length, 2);
+  assert.deepEqual(new Set(q.map((x) => fs.readFileSync(path.join(dir, x), "utf-8"))), new Set(["{ruim 1", "{ruim 2"]));
+});
+
+test("red team L2 (7) norm linear em corridas de espaço, igual ao algoritmo antigo, e limite de 5.000 caracteres", async (t) => {
+  const antiga = (x) => {
+    let r = fold(x.normalize("NFKC"));
+    r = r.replace(/\bn\s*[.o°]{1,3}\s*(?=\d)/g, "n ").replace(/§\s+/g, "§").replace(/[\u201c\u201d\u2018\u2019"'`´]/g, "'").replace(/[–—-]/g, "-");
+    return r.replace(/\s+([.,;:)\]])/g, "$1").replace(/([([])\s+/g, "$1").replace(/\s+/g, " ").trim();
+  };
+  const fold = (x) => x.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+  let seed = 7;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+  const alf = ["a", "B", "ç", "n", "º", "5", ".", ",", ";", ":", "(", ")", "[", "]", " ", " ", "  ", "\n", "\t", "§", "\u201c", "\u201d", "-", "—", "\u00a0", "Art", "n.", "N°"];
+  for (let i = 0; i < 600; i++) {
+    let x = "";
+    for (let k = rnd(40); k > 0; k--) x += alf[rnd(alf.length)];
+    assert.equal(lib.norm(x), antiga(x), JSON.stringify(x));
+  }
+  const t0 = Date.now();
+  assert.equal(lib.norm("a" + " ".repeat(40000) + "b ."), "a b.");
+  const vt = lib.verificarTrecho({ ementa: ("a" + " ".repeat(40000) + "b ."). repeat(2) }, "a" + " ".repeat(40000) + "b ccc ddd eee fff ggg hhh");
+  assert.ok(Date.now() - t0 < 3000 && !vt.valido, String(Date.now() - t0));
+  comEstadoLimpo(t);
+  assert.ok((await lib.verificarCitacao("0011441-43.2015.4.01.3500", "x".repeat(5001))).startsWith("Erro de parâmetro"));
+  assert.ok((await lib.buscar({ consulta: "y".repeat(5001) })).startsWith("Erro de parâmetro"));
+  assert.ok((await lib.linhaDoTempo({ consulta: "y".repeat(5001) })).startsWith("Erro de parâmetro"));
+  assert.throws(() => lib.buscarRecibos({ consulta: "y".repeat(5001), pasta: pastaTmp(t) }), /5000/);
+});
+
+test("red team L2 (8) índice de poda malformado: mesmo resultado do Python (instante desempata por id)", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const d0 = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  assert.equal(lib.gravarRecibosDaBusca(["A1", "A2", "A3"].map((id) => ({ ...d0, id })), null, env), 3);
+  lib.gravarIndiceBusca(dir, { A1: [100], A2: 5, A3: [100, 10], A4: null, A5: "x" });
+  assert.equal(lib.podarRecibosDeBusca(dir, 150, env), 1);
+  assert.ok(lib.lerRecibo("A1", env) === null && lib.lerRecibo("A2", env) && lib.lerRecibo("A3", env));
+});
+
+test("red team L2 (9) o .tmp não fica para trás quando o rename falha", (t) => {
+  const dir = pastaTmp(t);
+  const destino = path.join(dir, "destino");
+  fs.mkdirSync(destino);
+  assert.throws(() => lib.escreverJsonAtomico(destino, { a: 1 }));
+  assert.deepEqual(fs.readdirSync(dir).filter((x) => x.endsWith(".tmp")), []);
+});
+
+test("red team L2 (10) `t` não finito no livro-razão não derruba o relatório de ritmo", (t) => {
+  const dir = pastaTmp(t);
+  const lr = path.join(dir, "ritmo.jsonl");
+  fs.writeFileSync(lr, '{"t": NaN, "res": "ok"}\n{"t": Infinity, "res": "ok"}\n{"t": -Infinity}\n{"t": 1e400}\n{"t": 5000, "res": "ok", "op": "busca"}\n{"t": 9000, "res": "ok", "op": "busca"}\n');
+  assert.deepEqual(lib.ritmoLer(lr).map((x) => x.t), [5000, 9000]);
+  assert.ok(lib.relatorioDeRitmo(null, lr, {}).includes("Relatório de ritmo"));
+});
+
+test("red team L2 (11) paridade: obtido_em em hora local, aspas curvas no norm, trechoCentrado/fatosDoJulgado por ponto de código", () => {
+  const ia = lib.camposDeCustodia(docsDoFixture("02_busca_dano_moral.xml", "trf1")[0]).obtido_em;
+  assert.match(ia, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$/);
+  assert.ok(Math.abs(new Date(ia).getTime() - Date.now()) < 5000, ia);   // sem fuso, o JS lê como local: tem de ser "agora"
+  assert.equal(lib.norm("\u201cOlá\u201d \u2018x\u2019"), "'ola' 'x'");
+  // valores de referência calculados pelo Python (sha256, 16 hex) para entradas com emoji fora do BMP
+  const b1 = "😀".repeat(300) + " ementa " + "x ".repeat(100) + "«termo» " + "palavra😀 ".repeat(300);
+  const b2 = "😀".repeat(50) + " «termo» " + "z😀 ".repeat(400);
+  assert.equal(sha16(lib.trechoCentrado(b1, 800)), "bf1827d9a63807a0");
+  assert.equal(sha16(lib.trechoCentrado(b1, 320)), "8a53588bffbb6e8e");
+  assert.equal(sha16(lib.trechoCentrado(b2, 800)), "98a810ef543c8216");
+  assert.equal(sha16(lib.trechoCentrado(b2, 320)), "8a69b5fc1eeaf592");
+  assert.equal(sha16(lib.limpar("😀 abc ".repeat(500), 100)), "7524fcdae9c0ef3c");
+  const it = "Documento:1\nRELATÓRIO\n" + "fato 😀 narrado pelo autor. ".repeat(80) + "\nVOTO\nvoto aqui\n";
+  const it2 = "Documento:1\nRELATÓRIO\n" + "fato 😀 narrado pelo autor. ".repeat(80);
+  assert.equal(sha16(lib.fatosDoJulgado(it)[1]), "bc050ee594569927");
+  assert.equal(sha16(lib.fatosDoJulgado(it2)[1]), "f92252b0278feeb2");
+  assert.equal(sha16(lib.linhaFatos({ inteiro_teor_texto: it })), "8d35b197b57ccc07");
+  assert.equal(sha16(lib.linhaFatos({ inteiro_teor_texto: it2 })), "ecb3c986e11a7760");
+});
+
+test("red team L2 (12) buscar_recibos rotula a base certa e não diz que o inteiro teor só existe na TNU", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const d0 = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  const dTnu = { ...docsDoFixture("11_tnu_busca.xml", "tnu")[0], inteiro_teor_texto: tnuIt() };
+  lib.gravarRecibo({ ...d0, id: "COL1", base: "colegiado", inteiro_teor_embutido: "texto do inteiro teor do colegiado ".repeat(20) }, env);
+  lib.gravarRecibo(dTnu, env);
+  const bc = lib.buscarRecibos({ id_documento: "COL1", pasta: dir }, env);
+  assert.ok(bc.includes("inteiro teor Colegiado CJF incluído") && !bc.includes("inteiro teor da TNU incluído") && bc.includes("só existe nos recibos da TNU"), bc.slice(0, 900));
+  assert.ok(lib.buscarRecibos({ id_documento: dTnu.id, pasta: dir }, env).includes("inteiro teor TNU incluído"));
 });
