@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
  * Servidor MCP — Jurisprudência do TRF1 e da TNU (portal do CJF)
- * Porte Node.js do servidor Python (~/MCP/trf1-jurisprudencia/servidor_trf1.py — fonte de
- * verdade) para empacotamento .mcpb (1 clique no Claude Desktop).
+ * Servidor Node.js único (a partir da v1.7.0; o antigo servidor Python foi aposentado), empacotado em .mcpb (1 clique no Claude Desktop).
  *
  * Wiring do protocolo MCP e chamada de rede. Toda a lógica pura está em lib.js e é coberta
  * por testes de paridade em test/.
@@ -30,6 +29,7 @@ import {
   comAvisos,
   iniciarChecagemVersao,
 } from "./lib.js";
+import { baixarAtualizacao, textoAtualizacao, ErroAtualizacao } from "./atualizar.js";
 
 const server = new McpServer({ name: "Jurisprudência TRF1", version: VERSAO });
 iniciarChecagemVersao();
@@ -278,6 +278,30 @@ server.registerTool(
     let t;
     try { t = diagnosticoRitmoTexto() + (a?.relatorio ? "\n\n" + relatorioDeRitmo() : ""); } catch (e) { t = carimboNaoRealizada(`diagnóstico falhou (${e.name}: ${e.message})`); }
     return { content: [{ type: "text", text: await comAvisos(t) }] };
+  }
+);
+
+server.registerTool(
+  "atualizar_extensao_trf1",
+  {
+    title: "Baixar a versão mais nova desta extensão",
+    description:
+      "USE SÓ QUANDO O USUÁRIO PEDIR para atualizar a extensão. Consulta o GitHub oficial do projeto. Sem `confirmar`, só INFORMA se há versão mais nova (nada é baixado): " +
+      "mostre ao usuário e PERGUNTE se quer baixar. Só com `confirmar=true` — depois que o usuário disse que quer — baixa o arquivo para a pasta Downloads, confere o SHA-256 e diz " +
+      "onde ele está. NÃO instala: o usuário instala dando dois cliques no arquivo e confirmando. Nunca use por iniciativa própria, nunca passe confirmar=true sem a resposta do " +
+      "usuário e nunca abra ou execute o arquivo. Não consulta o portal do CJF.",
+    inputSchema: {
+      confirmar: z.boolean().optional().describe("true = o usuário disse, nesta conversa, que quer baixar o arquivo agora. Omita para só ver se há versão nova."),
+    },
+    annotations: { title: "Baixar atualização da extensão", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
+  async (a) => {
+    try {
+      return { content: [{ type: "text", text: textoAtualizacao(await baixarAtualizacao({ confirmar: a.confirmar === true })) }] };
+    } catch (e) {
+      const texto = e instanceof ErroAtualizacao ? e.message : `Não consegui baixar a atualização (${e?.message || e}).`;
+      return { content: [{ type: "text", text: texto }], isError: true };
+    }
   }
 );
 

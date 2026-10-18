@@ -192,20 +192,22 @@ disto.
 
 ## O que é este repositório
 
-Porte em **Node.js** do servidor Python
-[`trf1-jurisprudencia-mcp`](https://github.com/robertogecia/trf1-jurisprudencia-mcp) (fonte de
-verdade: mudança de comportamento entra primeiro lá, com selftest e red team, depois aqui, com o
-teste de paridade), empacotado como extensão `.mcpb` de um clique para o Claude Desktop — mesmo
-padrão de [`tjro-jurisprudencia-mcp`](https://github.com/robertogecia/tjro-jurisprudencia-mcp) e
+É a **única** implementação da extensão (a partir da v1.7.0): servidor **Node.js** empacotado como
+`.mcpb` de um clique para o Claude Desktop, e usável também no Claude Code. O antigo servidor Python
+(`trf1-jurisprudencia-mcp`) foi aposentado; quem tem versão antiga baixa a nova do zero, pelo botão
+acima. Mesmo padrão de [`tjro-jurisprudencia-mcp`](https://github.com/robertogecia/tjro-jurisprudencia-mcp) e
 [`tcero-jurisprudencia-mcpb`](https://github.com/robertogecia/tcero-jurisprudencia-mcpb).
+
+**Atualizar:** peça ao Claude "atualize a extensão do TRF1". Ele diz se há versão nova e, só se você
+mandar, baixa o instalador para a pasta Downloads (SHA-256 conferido); depois é só dar dois cliques.
 
 ## Ferramentas
 
-Mesmas oito do servidor Python: `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`
+Nove ferramentas: `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`
 (`modo="triagem"` para a leitura barata), `verificar_citacao_trf1`, `diagnostico_ritmo_trf1`
 (`relatorio=true` para o relatório do livro-razão de requisições) e, desde a v1.5.0, `buscar_recibos_trf1`
 (busca local, sem rede, nos recibos já gravados), `julgados_que_citam_trf1`, `linha_do_tempo_trf1`
-e `diagnostico_erros_trf1` (diário local de falhas, com `relatorio=true` para issue). Descrições
+`diagnostico_erros_trf1` (diário local de falhas, com `relatorio=true` para issue) e `atualizar_extensao_trf1` (informa a versão nova e, só com `confirmar=true`, baixa o instalador). Descrições
 completas em [`server/index.js`](server/index.js).
 
 ## Instalar o servidor Node (desenvolvimento / Claude Code)
@@ -214,7 +216,7 @@ completas em [`server/index.js`](server/index.js).
 git clone https://github.com/robertogecia/trf1-jurisprudencia-mcpb.git
 cd trf1-jurisprudencia-mcpb
 npm install
-npm test                      # 70 testes de paridade, sobre os mesmos fixtures do servidor Python
+npm test                      # testes sobre fixtures reais do portal
 node --check server/index.js
 ```
 
@@ -230,7 +232,7 @@ Empacotar o `.mcpb`:
 npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
 ```
 
-## Diferenças conhecidas frente ao servidor Python
+## Notas de implementação
 
 - **Decodificação de charset.** `Response.text()` do WHATWG fetch decodifica sempre como UTF-8,
   ignorando o charset do `Content-Type` — o eproc da TNU declara `ISO-8859-1`. Corrigido lendo o
@@ -247,7 +249,7 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
   `~/.trf1-jurisprudencia-ritmo.jsonl` têm o mesmo formato nos dois servidores (o campo `impl` da
   linha do livro-razão diz quem escreveu: `py` ou `node`). Sob `node --test` o livro-razão fica
   desligado, como o Python sob o `--selftest`, e nenhum teste toca a pasta real de recibos.
-- Fonte de verdade é sempre o servidor Python: mudança de comportamento entra lá primeiro.
+- Este repositório é a fonte de verdade. O servidor Python foi aposentado na v1.7.0 e não recebe mais correções.
 
 ## Correções do red team (v1.6.0, lote 2, 17/10/2026)
 
