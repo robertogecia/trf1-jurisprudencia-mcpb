@@ -211,7 +211,7 @@ test("recibos — grava, lê, sha divergente é posto de lado, recibo do process
   lib.aplicarFecho(d);
   const caminho = lib.gravarRecibo(d, env);
   assert.ok(caminho && fs.existsSync(caminho));
-  assert.equal(fs.statSync(caminho).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(fs.statSync(caminho).mode & 0o777, 0o600);
   const rec = lib.lerRecibo(d.id, env);
   assert.equal(rec.id_documento, d.id);
   assert.equal(rec.nr_processo, d.numero_digitos);
@@ -440,7 +440,7 @@ test("v1.5.0: diário de erros — privacidade, modo 0600, ritmo local ignorado,
   assert.equal(e.args.grupos, "2 grupo(s), 3 termo(s)");
   assert.equal(e.tipo, "http_503");
   assert.equal(e.versao, `node-${lib.VERSAO}`);
-  assert.equal((fs.statSync(env.TRF1_MCP_ARQUIVO_ERROS).mode & 0o777).toString(8), "600");
+  if (process.platform !== "win32") assert.equal((fs.statSync(env.TRF1_MCP_ARQUIVO_ERROS).mode & 0o777).toString(8), "600");
   assert.ok(!fs.readFileSync(env.TRF1_MCP_ARQUIVO_ERROS, "utf-8").match(/secreto|Fulano|0011441/));
   const ent = lib.lerErros(30, env);
   assert.equal(ent.length, 1);
@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
   assert.ok(rb.origem === "busca" && !rb.texto.includes("«") && !rb.ementa.includes("«") && !rb.inteiro_teor_incluido);
-  assert.equal(fs.statSync(lib.arqRecibo(db[0].id, env)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(fs.statSync(lib.arqRecibo(db[0].id, env)).mode & 0o777, 0o600);
   const idx = lib.lerIndiceBusca(dir);
   assert.deepEqual(Object.keys(idx).sort(), db.map((x) => x.id).sort());
   assert.ok(Object.values(idx).every((v) => v[0] > 100 && v[1] > 1e12));
@@ -1078,7 +1078,7 @@ test("v1.6.0 L2 (5) livro-razão: formato, sanitização, 0600, rotação, toler
   lib.ritmoAnotar(1_700_000_004_000, "busca", "ok", 200, 12.5, lr);   // round() do Python: metade para o par
   lib.ritmoAnotar(1_700_000_005_000, "busca", "ok", 200, 13.5, lr);
   const lin = fs.readFileSync(lr, "utf8").split("\n").filter(Boolean).map((x) => JSON.parse(x));
-  assert.equal(fs.statSync(lr).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(fs.statSync(lr).mode & 0o777, 0o600);
   assert.equal(lin.length, 5);
   assert.deepEqual(Object.keys(lin[0]), ["t", "impl", "pid", "id", "op", "res", "status", "durMs"]);
   assert.ok(lin[0].impl === "node" && lin[0].pid === process.pid && lin[0].t === 1_700_000_000_000 && lin[0].op === "busca" && lin[0].res === "ok" && lin[0].status === 200 && lin[0].durMs === 12);
@@ -1158,7 +1158,7 @@ test("v1.6.0 L2 (5c) fim a fim: requisitar anota cada desfecho, sem URL, consult
   lib._resetDisjuntorParaTeste();
   const bruto = fs.readFileSync(lr, "utf8");
   assert.ok(!bruto.includes("segredo") && !bruto.includes("0001369") && !bruto.includes("jurisprudencia.cjf") && bruto.split("\n").filter(Boolean).length === 8, bruto);
-  assert.equal(fs.statSync(lr).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(fs.statSync(lr).mode & 0o777, 0o600);
   assert.ok(lib.relatorioDeRitmo(null, lr, env).includes("Relatório de ritmo do portal do CJF"));
   assert.ok(lib.ritmoLer(lr).every((x) => x.impl === "node" && x.durMs !== undefined));
 });
