@@ -10,7 +10,7 @@
     "url": "https://github.com/robertogecia/trf1-jurisprudencia-mcpb"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/atualizar.test.js test/lib.test.js test/smoke.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
