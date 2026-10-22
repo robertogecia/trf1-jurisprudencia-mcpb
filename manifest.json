@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "trf1-jurisprudencia",
   "display_name": "Jurisprudência TRF1",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Criado pelo advogado @robertogrecia, esta ferramenta ajuda você a encontrar decisões do TRF1 e da Turma Nacional de Uniformização sobre o seu tema e conferir se uma citação é de verdade.",
   "long_description": "**Pesquisa.** Busque decisões do Tribunal Regional Federal da 1ª Região, das Turmas Recursais e da Turma Nacional de Uniformização (TNU) pelo tema, com sinônimos, ou pelo número do processo. Não precisa de login.\n\n**Leitura.** Abra todas as decisões publicadas sob um número de processo, com ementa e dispositivo. Na TNU, você lê também o relatório e o voto.\n\n**Conferência.** Antes de pôr uma frase entre aspas, confira se ela está mesmo no texto. Na TNU, a extensão diz também de quem é a frase: do tribunal, de outro julgado transcrito, de voto divergente ou da parte.\n\n**Outros recursos.** Veja quais julgados citam um precedente, como os acórdãos decidiram uma tese ano a ano e reencontre, sem consultar o portal, o que você já leu.\n\n**Cuidados.** No TRF1, o portal só mostra ementa e dispositivo, nunca o voto. A ferramenta é não oficial, mantida por um advogado. Confira número, relator, órgão e data antes de citar em peça.",
   "icon": "icon.png",

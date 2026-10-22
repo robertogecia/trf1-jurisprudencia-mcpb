@@ -1,6 +1,6 @@
 {
   "name": "trf1-jurisprudencia-mcp",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Busca de jurisprudência do TRF1 e da TNU (portal do CJF) como ferramentas MCP",
   "type": "module",
   "private": true,
@@ -10,7 +10,7 @@
     "url": "https://github.com/robertogecia/trf1-jurisprudencia-mcpb"
   },
   "scripts": {
-    "test": "node --test test/atualizar.test.js test/lib.test.js test/smoke.test.js"
+    "test": "node --test test/atualizar.test.js test/lib.test.js test/semana.test.js test/smoke.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

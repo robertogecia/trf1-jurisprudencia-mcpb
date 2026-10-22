@@ -12,11 +12,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { checarSemanal } from "./semana.js";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.7.3";
+export const VERSAO = "1.7.4";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -3302,11 +3303,32 @@ export async function checarVersaoNova({ atual = VERSAO, fetchImpl = globalThis.
     return null;
   }
 }
+export const ARQUIVO_AVISO_VERSAO = (env = process.env) =>
+  env.TRF1_MCP_ARQUIVO_AVISO_VERSAO || path.join(os.homedir(), ".trf1-jurisprudencia-aviso-versao.json");
+
+// Uma consulta ao GitHub por semana (registro local com a data da última checagem); nas demais sessões a sugestão
+// sai do registro, sem rede. Com `fetchImpl` injetado (teste) e sem `arquivoAviso`, não há registro.
+export async function checarVersaoSemanal({
+  atual = VERSAO,
+  fetchImpl = globalThis.fetch,
+  env = process.env,
+  timeoutMs = 2000,
+  arquivoAviso,
+  agora,
+} = {}) {
+  if (env.TRF1_MCP_SEM_AVISO_ATUALIZACAO === "1") return null;
+  const arquivo = arquivoAviso ?? (fetchImpl === globalThis.fetch || env.TRF1_MCP_ARQUIVO_AVISO_VERSAO ? ARQUIVO_AVISO_VERSAO(env) : null);
+  return checarSemanal({
+    arquivo, atual, versaoMaisNova, agora,
+    consultar: () => checarVersaoNova({ atual: "0.0.0", fetchImpl, env, timeoutMs }),
+  });
+}
+
 export const avisoAtualizacao = (novaVersao) => `⬆️ Há versão nova desta extensão (v${novaVersao}; a instalada é a v${VERSAO}).\nBaixar: ${PACOTE_MCPB_URL}\nDepois dê dois cliques no arquivo baixado e reinicie o Claude Desktop. O que mudou: ${RELEASES_PAGINA}`;
 
 let checagem = null, avisoDado = false;
 export function iniciarChecagemVersao(opcoes) {
-  if (!checagem) checagem = checarVersaoNova(opcoes);
+  if (!checagem) checagem = checarVersaoSemanal(opcoes);
   return checagem;
 }
 export async function comAvisos(texto) {
