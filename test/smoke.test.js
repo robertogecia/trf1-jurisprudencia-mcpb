@@ -1,3 +1,4 @@
+import "./_isolar.js"; // PRIMEIRO import: tira os testes de ~/.trf1-jurisprudencia*
 // Smoke test: o servidor sobe de uma pasta COM ESPAÇO no nome (o Claude Desktop instala em "Claude Extensions/")
 // e responde tools/list. Lição do TCE-RO: uma guarda por caminho deixou a extensão muda por semanas sem nenhum teste acusar.
 import { test } from "node:test";

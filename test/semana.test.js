@@ -1,3 +1,4 @@
+import "./_isolar.js"; // PRIMEIRO import: tira os testes de ~/.trf1-jurisprudencia*
 // Aviso de versão: uma consulta por semana, com registro local. Sem rede.
 import { test } from "node:test";
 import assert from "node:assert/strict";

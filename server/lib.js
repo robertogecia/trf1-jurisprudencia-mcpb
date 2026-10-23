@@ -17,7 +17,7 @@ import { checarSemanal } from "./semana.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.7.4";
+export const VERSAO = "1.7.5";
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
@@ -635,6 +635,18 @@ export function bruto(corpo, tn, posNorm) {
     const k = norm(corpo.slice(ini, fim)).indexOf(alvo);
     if (k < 0) continue;
     let conta = 0;
+    if (fim - ini > 4000) {
+      // red team 22/10/2026 (achado 5): no raio do documento inteiro o laço abaixo era O(n²) — 50 s num inteiro teor de 171 mil
+      // caracteres. Aqui, busca binária pelo 1º prefixo cuja forma normalizada passa de k (o comprimento cresce com o prefixo, salvo
+      // oscilação local de poucos caracteres pelo trim/colapso), depois recuo linear curto para achar a mesma posição do laço exato.
+      const f = (i) => norm(corpo.slice(ini, i + 1)).length;
+      let lo = ini, hi = fim - 1;
+      if (f(hi) <= k) return ini;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (f(mid) > k) hi = mid; else lo = mid + 1; }
+      let j = lo;
+      for (let s = 0; s < 64 && j - 1 >= ini && f(j - 1) > k; s++) j--;
+      return j;
+    }
     for (let i = ini; i < fim; i++) {
       const c = norm(corpo.slice(ini, i + 1)).length;
       if (c > conta) conta = c;
@@ -649,25 +661,56 @@ export function bruto(corpo, tn, posNorm) {
 const normalizarCasamento = (t) => (norm1(t).match(/[a-z0-9]+/g) || []).join(" ");
 const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** _faixa_norm: posição do trecho em norm1(bruto) (mesmo comprimento do bruto), ocorrência mais próxima do casamento oficial. */
+// "nº"/"n."/"n°"/"n.º"/"no" antes de número: norm() (o casamento oficial) dobra todas para "n"; norm1 dá "no", "n.", "n°", "n.o".
+// Sem a mesma dobra aqui, o trecho com "nº" contra o acórdão com "n." casava e faixaNorm devolvia null — e os alertas de aspas,
+// negação, parte, obiter e a posição sumiam em silêncio (red team 22/10/2026). O slot aceita qualquer grafia, nos dois lados.
+const SLOT_NUMERO = "n(?:[^a-z0-9]{0,3}o)?";
+// Rodada 2: grafia colada ("nº8.213", "n.º8.213") vira um token só ("no8") e o casamento caía no fail-closed. O token colado é
+// partido em slot + número, e depois do slot o separador pode ser vazio — nos dois lados ("nº 8.213" × "nº8.213").
+function tokensCasamento(ps0) {
+  const ps = [];
+  for (let i = 0; i < ps0.length; i++) {
+    const t = ps0[i], m = /^(no?)(\d.*)$/.exec(t), mo = t === "n" ? /^o(\d.*)$/.exec(ps0[i + 1] || "") : null;   // "no8" | "n" + "o8" ("n.º8")
+    if (m) ps.push(m[1], m[2]); else if (mo) { ps.push("n", "o", mo[1]); i++; } else ps.push(t);
+  }
+  const out = [];
+  for (let i = 0; i < ps.length; i++) {
+    const t = ps[i];
+    if (t === "n" && ps[i + 1] === "o" && /^\d/.test(ps[i + 2] || "")) { out.push(SLOT_NUMERO); i++; continue; }
+    if ((t === "n" || t === "no") && /^\d/.test(ps[i + 1] || "")) { out.push(SLOT_NUMERO); continue; }
+    out.push(escRe(t));
+  }
+  return out;
+}
 export function faixaNorm(nt, fragmentos, pertoDe = 0.0) {
   const lista = fragmentos.map((f) => normalizarCasamento(f).split(" ").filter(Boolean)).filter((ps) => ps.length);
   if (!lista.length) return null;
-  const pad = (ps) => new RegExp("(?<![a-z0-9])" + ps.map(escRe).join("[^a-z0-9]+") + "(?![a-z0-9])", "g");
+  const pad = (ps) => {
+    const tk = tokensCasamento(ps);
+    let src = "(?<![a-z0-9])";
+    tk.forEach((t, i) => { src += (i ? (tk[i - 1] === SLOT_NUMERO ? "[^a-z0-9]*" : "[^a-z0-9]+") : "") + t; });
+    return new RegExp(src + "(?![a-z0-9])", "g");
+  };
   const inicios = [...nt.matchAll(pad(lista[0]))].map((m) => m.index);
   if (!inicios.length) return null;
   const alvo = pertoDe * nt.length;
-  let pos = inicios[0];
-  for (const i of inicios) if (Math.abs(i - alvo) < Math.abs(pos - alvo)) pos = i;
-  let ini = null, fim = null;
-  for (const ps of lista) {
-    const re = pad(ps);
-    re.lastIndex = pos;
-    const m = re.exec(nt);
-    if (!m) return null;
-    ini = ini === null ? m.index : ini;
-    pos = fim = m.index + m[0].length;
+  // âncoras da mais próxima do casamento oficial para a mais distante. Rodada 3 (22/10/2026): com fragmentos repetidos
+  // ("Juiz Federal X Votante : [...] Juiz Federal X Votante :"), a âncora mais próxima podia ser a 2ª ocorrência, a cadeia não
+  // achava a 3ª e o fail-closed "ATRIBUIÇÃO NÃO ANALISADA" disparava à toa em 20 trechos de recibos reais; agora tento a seguinte.
+  const res = lista.map(pad);
+  const ordem = inicios.map((i) => [Math.abs(i - alvo), i]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).slice(0, 64);
+  for (const [, ancora] of ordem) {
+    let pos = ancora, ini = null, fim = null, ok = true;
+    for (const re of res) {
+      re.lastIndex = pos;
+      const m = re.exec(nt);
+      if (!m) { ok = false; break; }
+      ini = ini === null ? m.index : ini;
+      pos = fim = m.index + m[0].length;
+    }
+    if (ok) return [ini, fim];
   }
-  return [ini, fim];
+  return null;
 }
 
 /** _obiter_antes_com_pos: além da marca, onde ela está, para o alerta mostrar a frase. (atribuicao13.js é cópia compartilhada: o envoltório fica aqui.) */
@@ -704,6 +747,119 @@ function inicioDoVotoDeOutro(texto, meio) {
   return ult;
 }
 
+// Rede de segurança da posicaoTnu (posicao2.js é cópia idêntica em quatro extensões: a trava fica aqui). Lá, o autor do voto é o
+// "vencedor" se só o ÚLTIMO sobrenome coincidir — "MARIA DA SILVA" (vencida) passava por "FABIO DE SOUZA SILVA" (relator) — e o
+// bloco sem assinatura vira voto condutor mesmo abrindo com "peço vênia ... divergir" (red team 22/10/2026). Antes de aceitar
+// "voto condutor" e apagar o alerta VOTO DIVERGENTE, procuro sinal de divergência no próprio voto do trecho; havendo, o alerta fica.
+// Rodada 2 (reataque de 22/10/2026): (a) quando o acórdão diz quem o lavrou ("Relator do Acórdão" / "que lavrará o acórdão") e
+// é quem assina o voto, ele é o condutor e nada mais se pergunta — o VOTO-VISTA vencedor dos recibos reais (TNU00033044,
+// TNU00033494) gritava pelo cabeçalho; (b) mesmo juiz = mesmo prenome e sobrenomes contidos no outro nome (inicial vale: "F. DE S. SILVA"),
+// agnome (FILHO, JUNIOR, NETO) não conta como sobrenome; (c) "vencido" no fecho só olha os nomes da oração, nunca o do voto
+// vencedor citado depois ("..., nos termos do voto do Relator FULANO"); (d) a vênia só conta se for para divergir do relator, de
+// colega ou da maioria — "com a devida vênia à Turma de origem, discordo" e "após o voto-vista" não são divergência no colegiado.
+const RE_DOC_TNU_LIB = /(?:(?<=\n)|(?<![\s\S]))[ \t]*(?:Documento:[ \t]*\d+|Extrato de Ata)[ \t]*(?=\n|(?![\s\S]))/g;
+const RE_FECHO_LIB = /(?:(?<=\n)|(?<![\s\S]))[ \t]*(?:AC[ÓO]RD[ÃA]O|EXTRATO DE ATA[^\n]*)[ \t]*(?=\n|(?![\s\S]))/g;
+const TITULOS_JUIZ = new Set(["o", "a", "os", "as", "juiz", "juiza", "juizes", "juizas", "federal", "federais", "relator", "relatora", "eminente", "ilustre", "dr", "dra"]);
+const PARTICULAS = new Set(["de", "da", "do", "das", "dos", "e", "d"]);
+const AGNOMES = new Set(["filho", "filha", "junior", "jr", "neto", "neta", "sobrinho", "segundo", "terceiro"]);
+/** nome → {core, agnome}: sem títulos, partículas e agnome; iniciais ("F.") ficam como token de 1 letra. */
+function nomeJuiz(x) {
+  const ws = (norm(x || "").match(/[a-z]+/g) || []).filter((w) => !TITULOS_JUIZ.has(w) && !PARTICULAS.has(w));
+  let ag = "";
+  while (ws.length > 1 && AGNOMES.has(ws[ws.length - 1])) ag = ws.pop() + (ag ? " " + ag : "");
+  return { core: ws, ag };
+}
+const compat = (a, b) => a === b || (a.length === 1 && b.startsWith(a)) || (b.length === 1 && a.startsWith(b));
+/** mesmo juiz: prenome compatível e sobrenomes de um contidos, na ordem, nos do outro (inicial vale); agnomes não conflitantes. Um nome de token único só
+ * se compara com o último sobrenome do outro (assinatura truncada) — é o caso fraco, aceito como antes. */
+export function mesmoJuizTnu(x, y) {
+  const a = nomeJuiz(x), b = nomeJuiz(y);
+  if (!a.core.length || !b.core.length) return false;
+  if (a.ag && b.ag && a.ag !== b.ag) return false;
+  if (a.core.length === 1 || b.core.length === 1) {
+    const s = a.core.length === 1 ? a.core[0] : b.core[0], o = a.core.length === 1 ? b.core : a.core;
+    return s.length > 1 && s === o[o.length - 1];
+  }
+  // o nome mais curto tem de caber no mais longo: mesmo prenome e cada sobrenome dele presente, na ordem, no outro — a assinatura
+  // do eproc encurta ("FÁBIO SOUZA" assina por "FABIO DE SOUZA SILVA", recibo TNU00033758), mas não troca prenome nem sobrenome
+  const [c, l] = a.core.length <= b.core.length ? [a.core, b.core] : [b.core, a.core];
+  if (!compat(c[0], l[0])) return false;
+  let j = 1;
+  for (const w of c.slice(1)) { while (j < l.length && !compat(w, l[j])) j++; if (j >= l.length) return false; j++; }
+  return true;
+}
+// vênia para divergir DO COLEGIADO (relator, colega, maioria) ou sem destinatário; nunca da Turma de origem / acórdão recorrido.
+// Rodada 3 (reataque de 22/10/2026): o destinatário é lido nos DOIS lados do verbo — antes ("vênia ao juiz sentenciante") e
+// depois ("discordo do acórdão recorrido", "ouso divergir da Turma Recursal de origem", "divirjo, respeitosamente, do acórdão").
+// Destinatário do colegiado → sinal; só destinatário de origem → não é sinal; nenhum destinatário → sinal (conservador, como antes).
+// Fórmulas acrescentadas: "rogo vênia", "com a vênia do relator", "peço licença ao relator"; "divergência jurisprudencial" não conta.
+const RE_DIVERGE_CAND = new RegExp([
+  String.raw`\b(?:peco|pedindo|rogo|rogando|com a devida|com a maxima|com todo o respeito|com a|data|rogata)\s+(?:venia|licenca)\b([^.;]{0,120}?)\b(?:diverg|discord|divirjo)\w*`,
+  String.raw`\bdivirjo\b`,
+  String.raw`\bouso\s+(?:divergir|discordar)\b`,
+  String.raw`\b(?:inaugur\w*|abr[oi]\w*)\s+(?:a\s+)?divergencia\b(?!\s+jurisprudencial)`,
+].join("|"), "g");
+const ALVO_COLEGIADO = /\b(?:relator[a]?|colegas?|maioria|demais|vogal|voto\s+(?:do|da|condutor)|solucao\s+proposta|proposta\s+d[oa]\s+relator|eminentes?\s+pares|pares)\b|\bju[i]z[a]?\s+federal\s+[a-z]/;
+const ALVO_ORIGEM = /\b(?:acordao\s+(?:recorrido|impugnado|paradigma|de\s+origem)|turma\s+(?:recursal\s+)?(?:de\s+origem|recorrida|julgadora\s+de\s+origem)|turma\s+recursal|tribunal\s+(?:de\s+origem|regional)|sentenca|juiz[a]?\s+(?:sentenciante|de\s+origem|a\s+quo|singular|de\s+primeiro\s+grau)|decisao\s+(?:recorrida|impugnada|agravada|de\s+origem)|instancia\s+de\s+origem|instancias\s+ordinarias|origem)\b/;
+/** há, em `t` (já normalizado), vênia/divergência dirigida ao colegiado ou sem destinatário? */
+export function divergeDoColegiado(t) {
+  for (const m of t.matchAll(RE_DIVERGE_CAND)) {
+    const antes = m[1] || "";
+    const depois = t.slice(m.index + m[0].length, m.index + m[0].length + 90).split(/[.;]|\b(?:porque|pois|uma vez que|ja que)\b/)[0];
+    const alvo = antes + " | " + depois;
+    // "juiz sentenciante" é origem; o resto do destinatário do colegiado é lido sem ele
+    const semOrigem = alvo.replace(new RegExp(ALVO_ORIGEM.source, "g"), " ");
+    if (ALVO_COLEGIADO.test(semOrigem)) return true;
+    if (ALVO_ORIGEM.test(alvo)) continue;
+    return true;
+  }
+  return false;
+}
+const PARA_NOME = /\b(?:nos|que|negar|dar|conhecer|nao|julgar|acolher|rejeitar|deu|negou|dando|negando|conhecendo|para|provimento|pedido|incidente)\b/;
+/** nomes dados como vencidos no fecho (cada oração "vencido(s) ..." até o ponto), sem o nome do voto vencedor citado nela. */
+function vencidosNoFecho(fe) {
+  const nomes = [];
+  for (const v of fe.matchAll(/\bvencid[oa]s?\b([^.;]{0,300})/g)) {
+    const oracao = v[1].replace(/\bnos termos do voto d[oa][^,.;]*/g, " ").replace(/\bque lavrar\w* o acordao/g, " ");
+    for (let seg of oracao.split(/,|\be\b/)) {
+      const k = seg.search(PARA_NOME);
+      if (k >= 0) seg = seg.slice(0, k);
+      if (nomeJuiz(seg).core.length) nomes.push(seg);
+    }
+  }
+  return nomes;
+}
+export function divergenciaNoVotoTnu(texto, meio) {
+  const n = texto.length;
+  const iniV = inicioDoVotoDeOutro(texto, meio);
+  if (iniV === null) return "";
+  let docIni = 0, docFim = n;
+  for (const m of texto.matchAll(RE_DOC_TNU_LIB)) { if (m.index <= meio) docIni = m.index; else { docFim = m.index; break; } }
+  let sig = null;
+  for (const m of texto.slice(docIni, docFim).matchAll(/assinado por ([^,\n]{5,90}),/g)) sig = m;
+  const autor = sig ? sig[1] : "";
+  const mRel = /RELATOR[A]?[ \t]*:[ \t]*([^\n]+)/.exec(texto);
+  const mVen = /assinado por ([^,\n]{5,90}),[ \t]*Relator[a]? do Ac[óo]rd[ãa]o/.exec(texto)
+    || /nos termos do voto d[oa] (?:Ju[íi]z[a]? Federal )?([^,\n]{5,90}),? que lavrar[áa] o ac[óo]rd[ãa]o/i.exec(texto);
+  // prova positiva: o acórdão nomeia quem o lavrou e é quem assina este voto (mesmo VOTO-VISTA que pede vênia ao relator)
+  if (mVen && autor && mesmoJuizTnu(autor, mVen[1])) return "";
+  const vencedor = mVen ? mVen[1] : (mRel ? mRel[1] : "");
+  const linhaCab = norm(texto.slice(iniV, texto.indexOf("\n", iniV + 1) < 0 ? n : texto.indexOf("\n", iniV + 1)));
+  if (/\b(?:vista|divergente|vencido|vogal)\b/.test(linhaCab)) return "o cabeçalho do voto indica vista, divergência, vencido ou vogal";
+  // o relator (nome inteiro, com prenome e sobrenome; nunca só o último sobrenome) assinando o próprio voto não diverge de si mesmo:
+  // a vênia ali é à origem ou à divergência alheia. Só vale se nenhum fecho o der como vencido (por nome ou "vencido o relator").
+  const fechos = [...texto.matchAll(RE_FECHO_LIB)].map((m) => norm(texto.slice(m.index, Math.min(n, m.index + 3000))));
+  const relVencido = fechos.some((fe) => /\bvencid[oa]s?\s+(?:o|a)\s+(?:(?:eminente|ilustre)\s+)?(?:juiz[a]?\s+(?:federal\s+)?)?relator[a]?\b/.test(fe));
+  const relatorAssina = autor && mRel && nomeJuiz(autor).core.length > 1 && nomeJuiz(mRel[1]).core.length > 1 && mesmoJuizTnu(autor, mRel[1]) && !relVencido;
+  if (!relatorAssina && divergeDoColegiado(norm(texto.slice(iniV, Math.max(meio, iniV + 1))))) return "o próprio voto pede vênia para divergir do relator ou do colegiado antes do trecho";
+  if (autor) {
+    for (const fe of fechos)
+      if (vencidosNoFecho(fe).some((v) => mesmoJuizTnu(autor, v))) return "o acórdão dá como vencido quem assina este voto";
+  }
+  if (autor && vencedor && !mesmoJuizTnu(autor, vencedor)) return "quem assina o voto não é, pelo nome, quem lavrou o acórdão (prenome ou sobrenome diferem; a coincidência é parcial)";
+  return "";
+}
+
 export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) {
   const frags = (trecho || "").split(/\[\s*\.\.\.\s*\]|\(\s*\.\.\.\s*\)|\[…\]|…/).map((f) => f.trim()).filter(Boolean);
   if (!frags.length) return { ok: false, erro: "trecho vazio" };
@@ -712,22 +868,38 @@ export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) 
     return { ok: false, erro: `trecho curto demais para conferência útil (mínimo ${PISO_TRECHO_PALAVRAS} palavras e ${PISO_TRECHO_CHARS} caracteres): qualquer acórdão contém isso` };
   }
   const tn = norm(texto);
-  let pos = 0, ini0 = null;
-  const spans = [];
+  const res = [];
   for (const f of frags) {
     const palavras = norm(f).match(/\w+/g);
     if (!palavras) return { ok: false, fragmento: f };
-    const re = new RegExp("(?<!\\w)" + palavras.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\W+") + "(?!\\w)");
-    const m = re.exec(tn.slice(pos));
-    if (!m) return { ok: false, fragmento: f };
-    const a = pos + m.index, b = a + m[0].length;
-    if (spans.length && a - spans[spans.length - 1][1] > VAO_MAXIMO) {
-      return { ok: false, fragmento: f, erro: `o fragmento aparece, mas a ${a - spans[spans.length - 1][1]} caracteres do anterior (máximo ${VAO_MAXIMO}): \`[...]\` não pode costurar partes distantes do acórdão` };
-    }
-    spans.push([a, b]);
-    if (ini0 === null) ini0 = a;
-    pos = b;
+    res.push(new RegExp("(?<!\\w)" + palavras.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\W+") + "(?!\\w)", "g"));
   }
+  // encadeia os fragmentos a partir de uma âncora (ocorrência do 1º): cada seguinte na 1ª ocorrência depois do anterior — a mais
+  // próxima, que minimiza o vão e o fim, então o guloso é ótimo para a âncora dada. Red team 22/10/2026 (achado 4): a âncora fixa
+  // na 1ª ocorrência dava falso "partes distantes" quando o 1º fragmento se repete (ementa e voto); agora tento as seguintes.
+  const cadeia = (a0, b0) => {
+    const sp = [[a0, b0]];
+    for (let i = 1; i < frags.length; i++) {
+      const re = res[i]; re.lastIndex = sp[i - 1][1];
+      const m = re.exec(tn);
+      if (!m) return { ok: false, fragmento: frags[i] };
+      const a = m.index, b = a + m[0].length, vao = a - sp[i - 1][1];
+      if (vao > VAO_MAXIMO) return { ok: false, fragmento: frags[i], erro: `o fragmento aparece, mas a ${vao} caracteres do anterior (máximo ${VAO_MAXIMO}): \`[...]\` não pode costurar partes distantes do acórdão` };
+      sp.push([a, b]);
+    }
+    return sp;
+  };
+  let spans = null, primeiraFalha = null;
+  res[0].lastIndex = 0;
+  for (let m, k = 0; k < 200 && (m = res[0].exec(tn)); k++) {
+    const r = cadeia(m.index, m.index + m[0].length);
+    if (Array.isArray(r)) { spans = r; break; }
+    if (!primeiraFalha) primeiraFalha = r;
+    if (!r.erro) break;   // fragmento seguinte inexistente depois desta âncora: âncoras posteriores também não o acham
+    if (m[0].length === 0) res[0].lastIndex++;
+  }
+  if (!spans) return primeiraFalha || { ok: false, fragmento: frags[0] };
+  const ini0 = spans[0][0], pos = spans[spans.length - 1][1];
   const alertas = [];
   let emTranscricao = false;
   if (comAtribuicao) {
@@ -758,13 +930,23 @@ export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) 
   const ob = comAtribuicao && !emTranscricao && fx && !alertas.some((a) => a.startsWith("ENTRE ASPAS")) ? obiterAntesComPos(nt, fx[0], fx[1], bruto) : null;
   if (ob)
     alertas.push(`OBITER DICTUM?: o trecho vem sob «${ob.marca}» — raciocínio hipotético ou fundamento alternativo; o resultado do julgado não dependeu dele. Vale como reforço, não como ratio decidendi; cite dizendo que é obiter.` + fraseDoObiter(bruto, ob, fx[0]));
+  if (!fx)   // fail-closed: casou pelo norm(), mas não deu para localizar no bruto — nunca sair "✅ VÁLIDO" limpo sem as checagens
+    alertas.push("ATRIBUIÇÃO NÃO ANALISADA: o trecho casou, mas não foi possível localizá-lo no texto original para checar aspas, negação, alegação da parte, obiter e posição no julgado. Leia o parágrafo inteiro no acórdão antes de citar.");
   const meioTrecho = fx ? Math.floor((fx[0] + fx[1]) / 2) : 0;
-  const posicao = comAtribuicao && fx && tribunal === "TNU" ? posicaoTnu(bruto, meioTrecho) : "";
+  let posicao = comAtribuicao && fx && tribunal === "TNU" ? posicaoTnu(bruto, meioTrecho) : "";
   if (posicao && comAtribuicao) {
     // espelho do Python: na TNU o voto de outro juiz vem do título do documento (gabarito cego de 06/10/2026: 85% × 62%)
     let k = alertas.findIndex((x) => x.startsWith("VOTO DIVERGENTE"));
     if (k >= 0) alertas.splice(k, 1); else k = null;
-    if (posicao.startsWith("VOTO de outro juiz") || posicao.startsWith("VOTO do relator VENCIDO")) {
+    const condutor = posicao.startsWith("fundamentação do voto condutor") || posicao.startsWith("DISPOSITIVO do voto");
+    const suspeita = condutor ? divergenciaNoVotoTnu(bruto, meioTrecho) : "";
+    if (suspeita) {   // conservador: na dúvida o alerta volta, e a posição deixa de afirmar "voto condutor"
+      const iniV = inicioDoVotoDeOutro(bruto, meioTrecho);
+      alertas.splice(k !== null ? k : (emTranscricao ? 1 : 0), 0, `VOTO DIVERGENTE?: o trecho está num voto que pode NÃO ser o de quem lavrou o acórdão (${suspeita}). ` +
+        "Pode ser voto vencido, vista ou vogal. Leia o acórdão/extrato de ata antes de citar como entendimento da TNU." +
+        (iniV !== null ? ` Esse voto começa assim: «${abertura(bruto, iniV)}».` : ""));
+      posicao = `VOTO de autoria incerta — ${suspeita}; não afirmo que seja o voto condutor, veja quem venceu`;
+    } else if (posicao.startsWith("VOTO de outro juiz") || posicao.startsWith("VOTO do relator VENCIDO")) {
       const iniV = inicioDoVotoDeOutro(bruto, meioTrecho);
       alertas.splice(k !== null ? k : (emTranscricao ? 1 : 0), 0, "VOTO DIVERGENTE: o trecho está num voto que NÃO é o de quem lavrou o acórdão (vista, divergente, vogal ou o " +
         "do relator vencido) — pode ter ficado vencido ou só acompanhado. Leia o acórdão/extrato de ata antes de citar " +
@@ -2621,7 +2803,7 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
   if (digitos.length < 7) return `Número muito curto para localizar com segurança: ${JSON.stringify(numero)}.`;
   if (!(trecho || "").trim()) return "Informe o trecho que pretende citar entre aspas.";
   try { validarTamanho("trecho", trecho); } catch (e) { return erroDeParametro(e); }
-  let origem = "portal", dados = {}, docs = [], soBusca = false;
+  let origem = "portal", dados = {}, docs = [], soBusca = false, reciboDe = "";
   try {
     base = validarBase(base);
     // recibo local primeiro (0 requisições): o que o portal entregou da última vez, com sha256
@@ -2631,6 +2813,9 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
       docs = recs.map((r) => docDeRecibo(r, env));
       dados = { avisos: [], total: docs.length };
       origem = "recibo local";
+      // red team 22/10/2026 (achado 3): o recibo é do dia em que foi lido; o processo pode ter documento posterior (ED, agravo)
+      reciboDe = recs.map((r) => String(r.obtido_em || "")).filter(Boolean).sort().pop() || "";
+      if (reciboDe) origem = `recibo local de ${reciboDe.slice(0, 10)}`;
       // v1.6.0 (porte do TJRO v1.31): recibo gravado só pela BUSCA não prova que o processo esteja completo (a lista traz só os
       // documentos que casaram). Se o trecho está nele, vale; se não está, a ausência NÃO se conclui: lê o número inteiro no portal.
       if (recs.every((r) => r.origem === "busca")) {
@@ -2681,6 +2866,10 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
     rodape = "\nCobre SÓ ementa e dispositivo: o portal não expõe o voto nesta base, então a atribuição (transcrição, voto vencido, alegação da parte) NÃO foi analisada — não é que não exista. Aspas em ementa/dispositivo são seguras; qualquer coisa do voto só no navegador.";
   }
   rodape += ` Comparação por palavra inteira, tolerante a caixa, acento e pontuação; mínimo de ${PISO_TRECHO_PALAVRAS} palavras; \`[...]\` separa fragmentos em ordem, a até ${VAO_MAXIMO} caracteres. Se ❌: não cite entre aspas — parafraseie, ou confira no navegador.`;
+  if (origem.startsWith("recibo local") && linhas.some((l) => l.startsWith("❌")) && !linhas.some((l) => l.startsWith("✅")))
+    rodape += ` ATENÇÃO: a conferência usou só os recibos locais${reciboDe ? ` lidos em ${reciboDe.slice(0, 10)}` : ""}, sem ir ao portal. ` +
+      "Um documento posterior do processo (embargos, agravo interno, novo acórdão) não estaria neles: o ❌ diz que o trecho não está nesses " +
+      "documentos, não que não exista no processo — antes de impugnar a citação de alguém como inventada, confira no portal.";
   for (const a of dados.avisos || []) linhas.unshift(`⚠️ ${a}`);
   return [cabec, ...linhas].join("\n") + rodape;
 }

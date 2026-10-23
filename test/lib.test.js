@@ -1,3 +1,4 @@
+import "./_isolar.js"; // PRIMEIRO import: tira os testes de ~/.trf1-jurisprudencia*
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -838,7 +839,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.7.4");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.7.5");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -955,6 +956,9 @@ test("v1.6.0 L2 (1d) verificar_citacao com recibo de busca: TNU vai ao portal; t
   const f5 = portalNumero();
   const vd = await lib.verificarCitacao(d0.numero, "frase que certamente não consta de nenhum documento deste processo", "trf1", f5, env2);
   assert.ok(f5.chamadas.length === 0 && vd.includes("❌ NÃO ENCONTRADO") && vd.includes("fonte: recibo local"), vd.slice(0, 300));
+  // red team 22/10/2026 (achado 3): o ❌ do recibo local diz a data do recibo e que não prova ausência no processo; o ✅ não leva a nota
+  assert.ok(/fonte: recibo local de \d{4}-\d{2}-\d{2}/.test(vd) && vd.includes("não que não exista no processo") && vd.includes("confira no portal"), vd.slice(-700));
+  assert.ok(!vt2.includes("não que não exista no processo") && !vb.includes("não que não exista no processo"));
   // portal falha e só há recibo de busca: carimbo de pesquisa NÃO realizada que explica
   const dir3 = pastaTmp(t); const env3 = { TRF1_MCP_DIR_RECIBOS: dir3 };
   assert.equal(lib.gravarRecibosDaBusca([d0], null, env3), 1);
@@ -1364,4 +1368,225 @@ test("red team L2 (12) buscar_recibos rotula a base certa e não diz que o intei
   const bc = lib.buscarRecibos({ id_documento: "COL1", pasta: dir }, env);
   assert.ok(bc.includes("inteiro teor Colegiado CJF incluído") && !bc.includes("inteiro teor da TNU incluído") && bc.includes("só existe nos recibos da TNU"), bc.slice(0, 900));
   assert.ok(lib.buscarRecibos({ id_documento: dTnu.id, pasta: dir }, env).includes("inteiro teor TNU incluído"));
+});
+
+// ================================================ red team 22/10/2026 (achados de gravidade alta) ===
+test("red team 22/10 (1) TNU: voto vencido de juiz com o mesmo ÚLTIMO sobrenome do relator não vira 'voto condutor' e o alerta fica", () => {
+  const R = "FABIO DE SOUZA SILVA";
+  const T = "a renda per capita deve excluir os gastos com medicamentos de alto custo";
+  const ac = (cab, abre, sig, fecho) => `Documento:1\nTIMBRE\nRELATOR : Juiz Federal ${R}\nRELATÓRIO\nTrata-se de pedido de uniformização contra acórdão que negou o benefício assistencial.\n` +
+    `VOTO\nNego provimento ao pedido, pois a renda familiar supera o limite legal.\nassinado por ${R},\n` +
+    `Documento:2\nTIMBRE\nRELATOR : Juiz Federal ${R}\n${cab}\n${abre} ${T}.\n` + (sig ? `assinado por ${sig},\n` : "") +
+    `Documento:3\nTIMBRE\nRELATOR : Juiz Federal ${R}\nACÓRDÃO\n${fecho} Brasília, 10 de maio de 2025.\n`;
+  const maioria = (v) => `A Turma Nacional de Uniformização decidiu, por maioria, negar provimento, nos termos do voto do relator, vencida a Juíza Federal ${v}.`;
+  const unan = "A Turma Nacional de Uniformização decidiu, por unanimidade, negar provimento.";
+  const casos = [
+    ["VOTO-VISTA", "Peço vênia ao relator para divergir, porque", "MARIA DA SILVA", maioria("MARIA DA SILVA")],
+    ["VOTO-VISTA", "Peço vênia ao relator para divergir, porque", "BELTRANO SILVA", maioria("BELTRANO SILVA")],
+    ["VOTO", "Peço vênia ao relator para divergir, porque", "MARIA DA SILVA", maioria("MARIA DA SILVA")],
+    ["VOTO", "Peço vênia ao relator para divergir, porque", null, maioria("MARIA DA SILVA")],   // sem assinatura
+    ["VOTO", "Acrescento que", "MARIA DA SILVA", maioria("MARIA DA SILVA")],                    // só o fecho denuncia
+    ["VOTO", "Acrescento que", "MARIA DA SILVA", unan],                                         // só o sobrenome final coincide
+  ];
+  for (const [cab, abre, sig, fecho] of casos) {
+    const r = lib.conferir(ac(cab, abre, sig, fecho), T, "TNU");
+    assert.ok(r.ok && r.alertas.some((a) => a.startsWith("VOTO DIVERGENTE")), `${cab}/${sig}: ${JSON.stringify(r.alertas)}`);
+    assert.ok(!r.posicao.includes("voto condutor") || r.posicao.startsWith("VOTO de autoria incerta"), `${cab}/${sig}: ${r.posicao}`);
+  }
+  // controles: o próprio relator (nome inteiro ou abreviado) em voto complementar, sem divergência — continua voto condutor, sem alerta
+  for (const sig of [R, "FABIO SILVA"]) {
+    const r = lib.conferir(ac("VOTO", "Acrescento que", sig, unan), T, "TNU");
+    assert.deepEqual(r.alertas, [], sig);
+    assert.ok(r.posicao.startsWith("fundamentação do voto condutor"), r.posicao);
+  }
+  // o divergente com nome sem coincidência continua rotulado como antes
+  const r3 = lib.conferir(ac("VOTO-VISTA", "Peço vênia ao relator para divergir, porque", "MARIA CLARA PEREIRA", maioria("MARIA CLARA PEREIRA")), T, "TNU");
+  assert.ok(r3.posicao.startsWith("VOTO de outro juiz") && r3.alertas.some((a) => a.startsWith("VOTO DIVERGENTE:")), r3.posicao);
+});
+
+test("red team 22/10 (2) 'nº' × 'n.' × 'n°' × 'n.º': os alertas não somem quando a grafia do trecho difere da do acórdão", () => {
+  const G = ["nº", "n.", "n°", "n.º", "N.º", "Nº", "no"];
+  const neg = (t, s) => lib.conferir(`EMENTA\nPREVIDENCIÁRIO. Não é devida a revisão prevista no art. 29 da Lei ${t} 8.213/91 ao segurado cujo benefício foi concedido antes da lei.`,
+    `devida a revisão prevista no art. 29 da Lei ${s} 8.213/91 ao segurado`, "TNU");
+  const asp = (t, s) => lib.conferir(`Documento:1\nTIMBRE\nRELATOR : Juiz Federal FULANO DE TAL\nRELATÓRIO\nO INSS sustenta que "a revisão do art. 29, II, da Lei ${t} 8.213/91 alcança apenas os benefícios concedidos após a lei". É o relatório.\n` +
+    "VOTO\nNego provimento ao pedido, pois a tese não se sustenta no caso concreto.\nassinado por FULANO DE TAL,\n", `a revisão do art. 29, II, da Lei ${s} 8.213/91 alcança apenas os benefícios`, "TNU");
+  for (const t of G) for (const s of G) {
+    const a = neg(t, s), b = asp(t, s);
+    assert.ok(a.ok && a.alertas.some((x) => x.startsWith("NEGAÇÃO")), `negação ${t}/${s}: ${JSON.stringify(a.alertas)}`);
+    assert.ok(b.ok && b.alertas.some((x) => x.startsWith("ENTRE ASPAS")) && b.posicao.startsWith("RELATÓRIO"), `aspas ${t}/${s}: ${JSON.stringify(b.alertas)} ${b.posicao}`);
+  }
+  // grafia colada ("nº8.213"): na rodada 1 caía no fail-closed (ATRIBUIÇÃO NÃO ANALISADA); na 2 casa e a NEGAÇÃO aparece
+  const c = lib.conferir("EMENTA\nNão é devida a revisão prevista no art. 29 da Lei n. 8.213/91 ao segurado antigo.", "devida a revisão prevista no art. 29 da Lei nº8.213/91 ao segurado", "TNU");
+  assert.ok(c.ok && c.alertas.some((x) => x.startsWith("NEGAÇÃO")), JSON.stringify(c.alertas));
+});
+
+// ================================================ red team 22/10/2026, rodada 2 (reataque: regressões e variantes) ===
+const acTnu2 = ({ R = "FABIO DE SOUZA SILVA", cab = "VOTO", abre = "Acrescento que", sig, fecho, corpo1 }) => {
+  const T = "a renda per capita deve excluir os gastos com medicamentos de alto custo";
+  return `Documento:1\nTIMBRE\nRELATOR : Juiz Federal ${R}\nRELATÓRIO\nTrata-se de pedido de uniformização contra acórdão que negou o benefício assistencial.\n` +
+    `VOTO\n${corpo1 || "Nego provimento ao pedido, pois a renda familiar supera o limite legal."}\nassinado por ${R},\n` +
+    `Documento:2\nTIMBRE\nRELATOR : Juiz Federal ${R}\n${cab}\n${abre} ${T}.\n` + (sig ? `assinado por ${sig},\n` : "") +
+    `Documento:3\nTIMBRE\nRELATOR : Juiz Federal ${R}\nACÓRDÃO\n${fecho} Brasília, 10 de maio de 2025.\n`;
+};
+const T2 = "a renda per capita deve excluir os gastos com medicamentos de alto custo";
+const UNAN2 = "A Turma Nacional de Uniformização decidiu, por unanimidade, negar provimento.";
+const limpo2 = (r, lab) => { assert.ok(r.ok, lab); assert.deepEqual(r.alertas, [], lab); assert.ok(/^(fundamentação do voto condutor|DISPOSITIVO do voto)/.test(r.posicao), `${lab}: ${r.posicao}`); };
+const suspeito2 = (r, lab) => assert.ok(r.ok && r.alertas.some((a) => a.startsWith("VOTO DIVERGENTE")) && !/^(fundamentação do voto condutor|DISPOSITIVO do voto)/.test(r.posicao), `${lab}: ${r.posicao} ${JSON.stringify(r.alertas)}`);
+
+test("red team 22/10 rodada 2 (R1) o voto do relator vencedor não vira 'autoria incerta' pelo fecho, pela vênia à origem, por 'voto-vista' ou por assinatura abreviada", () => {
+  const R = "FABIO DE SOUZA SILVA";
+  const casos = [
+    ["vencido + nos termos do voto do Relator FULANO", { sig: R, fecho: `A Turma Nacional de Uniformização decidiu, por maioria, vencido o Juiz Federal JOAO PEREIRA, CONHECER e NEGAR PROVIMENTO ao pedido, nos termos do voto do Juiz Federal Relator ${R}.` }],
+    ["vencidos lista + nos termos do voto do relator", { sig: R, fecho: `decidiu, por maioria, vencidos os Juízes Federais JOAO PEREIRA e ANA COSTA, nos termos do voto do relator Fabio de Souza Silva.` }],
+    ["vencido + verbo sem vírgula", { sig: R, fecho: `decidiu, por maioria, vencido o Juiz Federal JOAO PEREIRA, negar provimento nos termos do voto do Juiz Relator ${R}.` }],
+    ["vênia à Turma de origem", { sig: R, abre: "Com a devida vênia à Turma Recursal de origem, dela discordo, pois", fecho: UNAN2 }],
+    ["vênia ao acórdão recorrido", { sig: R, abre: "Com a devida vênia à Turma de origem, discordo do acórdão recorrido, pois", fecho: UNAN2 }],
+    ["menciona pedido de voto-vista", { sig: R, abre: "Registro que houve pedido de voto-vista. No mérito,", fecho: UNAN2 }],
+    ["após o voto-vista", { sig: R, abre: "Após o voto-vista, mantenho meu voto, pois", fecho: UNAN2 }],
+    ["divergência jurisprudencial", { sig: R, abre: "Demonstrada a divergência jurisprudencial, conheço do incidente. No mérito,", fecho: UNAN2 }],
+    ["assinatura abreviada", { sig: "F. DE S. SILVA", fecho: UNAN2 }],
+    ["assinatura com acento", { sig: "FÁBIO DE SOUZA SILVA", fecho: UNAN2 }],
+    ["assinatura encurtada pelo eproc (FÁBIO SOUZA)", { sig: "FÁBIO SOUZA", fecho: UNAN2 }],
+  ];
+  for (const [lab, o] of casos) limpo2(lib.conferir(acTnu2(o), T2, "TNU"), lab);
+});
+
+test("red team 22/10 rodada 2 (R2) VOTO-VISTA vencedor (Relator do Acórdão / que lavrará o acórdão) é o voto condutor, mesmo pedindo vênia ao relator", () => {
+  const doc = (fecho, sigFecho) => "Documento:1\nTIMBRE\nRELATOR : Juiz Federal FABIO DE SOUZA SILVA\nRELATÓRIO\nTrata-se de pedido de uniformização.\n" +
+    "VOTO\nNego provimento ao pedido, pois a renda supera o limite.\nassinado por FABIO DE SOUZA SILVA, Juiz Federal\n" +
+    `Documento:2\nTIMBRE\nRELATOR : Juiz Federal FABIO DE SOUZA SILVA\nVOTO-VISTA\nPeço vênia ao relator para divergir. No mérito, ${T2}. Ante o exposto, dou provimento ao pedido.\nassinado por JOÃO CARLOS CABRELON DE OLIVEIRA, Juiz Federal\n` +
+    `Documento:3\nTIMBRE\nRELATOR : Juiz Federal FABIO DE SOUZA SILVA\nACÓRDÃO\n${fecho}\nBrasília, 9 de abril de 2025.\n` + (sigFecho ? "Documento eletrônico assinado por JOÃO CARLOS CABRELON DE OLIVEIRA, Relator do Acórdão , na forma da lei.\n" : "");
+  const f = "A Turma Nacional de Uniformização decidiu, por maioria, vencido o relator, CONHECER e DAR PROVIMENTO, nos termos do voto do Juiz Federal JOÃO CARLOS CABRELON DE OLIVEIRA que lavrará o acórdão.";
+  for (const sf of [true, false]) {
+    const r = lib.conferir(doc(f, sf), T2, "TNU");
+    assert.ok(r.ok && !r.alertas.some((a) => a.startsWith("VOTO DIVERGENTE")), `${sf}: ${JSON.stringify(r.alertas)}`);
+    assert.ok(!r.posicao.startsWith("VOTO de autoria incerta"), r.posicao);
+  }
+});
+
+test("red team 22/10 rodada 2 (V1) agnome e dois sobrenomes em comum com prenome diferente não fazem o mesmo juiz", () => {
+  const casos = [
+    ["FILHO unânime", { R: "JOSE CARLOS SILVA FILHO", sig: "PEDRO SILVA FILHO", fecho: UNAN2 }],
+    ["FILHO vencido", { R: "JOSE CARLOS SILVA FILHO", sig: "PEDRO SILVA FILHO", fecho: "A TNU decidiu, por maioria, negar provimento, vencido o Juiz Federal PEDRO SILVA FILHO." }],
+    ["JUNIOR unânime", { R: "FABIO SOUZA JUNIOR", sig: "MARCO SOUZA JUNIOR", fecho: UNAN2 }],
+    ["dois sobrenomes unânime", { sig: "MARIA DE SOUZA SILVA", fecho: UNAN2 }],
+    ["dois sobrenomes vencida", { sig: "MARIA DE SOUZA SILVA", fecho: "decidiu, por maioria, vencida a Juíza Federal MARIA DE SOUZA SILVA." }],
+    ["vencida em caixa mista", { sig: "MARIA DA SILVA", fecho: "decidiu, por maioria, negar provimento. Ficou vencida a Juíza Federal Maria da Silva." }],
+    ["Divirjo do relator", { abre: "Divirjo do relator, porque", fecho: UNAN2 }],
+    ["vênia, ouso discordar", { abre: "Com a devida vênia, ouso discordar, porque", fecho: UNAN2 }],
+    ["VOTO DIVERGENTE no cabeçalho", { cab: "VOTO DIVERGENTE", sig: "MARIA DA SILVA", fecho: UNAN2 }],
+  ];
+  for (const [lab, o] of casos) suspeito2(lib.conferir(acTnu2(o), T2, "TNU"), lab);
+  // unidade: o casamento de nomes
+  const sim = [["FABIO DE SOUZA SILVA", "FÁBIO SOUZA"], ["FABIO DE SOUZA SILVA", "F. DE S. SILVA"], ["FABIO DE SOUZA SILVA", "FABIO SILVA"], ["JOSE SILVA FILHO", "JOSE SILVA"], ["Juiz Federal FABIO DE SOUZA SILVA", "fabio de souza silva"]];
+  const nao = [["FABIO DE SOUZA SILVA", "MARIA DE SOUZA SILVA"], ["JOSE CARLOS SILVA FILHO", "PEDRO SILVA FILHO"], ["FABIO SOUZA", "FABIO SILVA"], ["JOSE SILVA FILHO", "JOSE SILVA NETO"], ["", "FABIO"]];
+  for (const [a, b] of sim) assert.ok(lib.mesmoJuizTnu(a, b) && lib.mesmoJuizTnu(b, a), `${a} = ${b}`);
+  for (const [a, b] of nao) assert.ok(!lib.mesmoJuizTnu(a, b) && !lib.mesmoJuizTnu(b, a), `${a} != ${b}`);
+});
+
+test("red team 22/10 rodada 2 (V2) grafia colada do número ('nº8.213', 'n.º8.213') casa nos dois lados e os alertas não somem", () => {
+  const G = ["nº", "n.", "n°", "n.º", "no", "nº ", "n. ", "n.º "];
+  for (const t of G) for (const s of G) {
+    const r = lib.conferir(`EMENTA\nNão é devida a revisão prevista no art. 29 da Lei ${t}8.213/91 ao segurado antigo.`, `devida a revisão prevista no art. 29 da Lei ${s}8.213/91 ao segurado`, "TNU");
+    assert.ok(r.ok && r.alertas.some((x) => x.startsWith("NEGAÇÃO")) && !r.alertas.some((x) => x.startsWith("ATRIBUIÇÃO NÃO ANALISADA")), `${t}|${s}: ${JSON.stringify(r.alertas)}`);
+  }
+  // controle: "no" preposição antes de ordinal continua casando sem alerta espúrio
+  const c = lib.conferir("EMENTA\nO prazo previsto no 1º do art. 103 conta-se da ciência inequívoca do segurado.", "o prazo previsto no 1º do art. 103 conta-se da ciência", "TNU");
+  assert.ok(c.ok && c.alertas.length === 0, JSON.stringify(c.alertas));
+});
+
+// ================================================ red team 22/10/2026, rodada 3 (alarmes falsos da rodada 2 e achados médios) ===
+test("red team 22/10 rodada 3 (R3) o voto do próprio relator que diverge da ORIGEM (acórdão recorrido, Turma de origem, sentença) não vira 'autoria incerta'", () => {
+  const R = "FABIO DE SOUZA SILVA";
+  const aberturas = [
+    "Com a devida vênia, discordo do acórdão recorrido, pois",
+    "Peço vênia para divergir do entendimento da Turma Recursal de origem, pois",
+    "Divirjo, respeitosamente, do acórdão recorrido, pois",
+    "Ouso divergir da Turma Recursal de origem, pois",
+    "Com a devida vênia ao juiz sentenciante, discordo de sua conclusão, pois",
+    "Abro a divergência jurisprudencial para conhecer do incidente. No mérito,",
+  ];
+  // o voto 2 é do relator, assinado por ele; decisão unânime
+  for (const abre of aberturas) limpo2(lib.conferir(acTnu2({ sig: R, abre, fecho: UNAN2 }), T2, "TNU"), abre);
+  // o mesmo, só que o voto vem SEM assinatura: aí vale a leitura do destinatário (origem não é divergência no colegiado)
+  for (const abre of aberturas) {
+    const r = lib.conferir(acTnu2({ sig: null, abre, fecho: UNAN2 }), T2, "TNU");
+    assert.ok(!r.alertas.some((a) => a.startsWith("VOTO DIVERGENTE?")), `${abre}: ${JSON.stringify(r.alertas)}`);
+  }
+  // unidade do destinatário
+  for (const s of aberturas) assert.equal(lib.divergeDoColegiado(lib.norm(s)), false, s);
+});
+
+test("red team 22/10 rodada 3 (V3) vênia ao relator em outras fórmulas e voto do relator vencido continuam disparando", () => {
+  const sim = [
+    "Rogo vênia ao eminente Relator para divergir, pois",
+    "Com a vênia do Relator, divirjo da solução proposta, pois",
+    "Peço licença ao Relator para divergir, pois",
+    "Respeitosamente, divirjo do eminente Relator, pois",
+    "Peço vênia para divergir. No mérito,",
+    "Com a devida vênia ao Juiz Federal João Pereira, divirjo. No mérito,",
+    "Peço vênia aos eminentes pares para divergir, pois",
+    "Ouso divergir da maioria, pois",
+  ];
+  for (const abre of sim) {
+    assert.equal(lib.divergeDoColegiado(lib.norm(abre)), true, abre);
+    suspeito2(lib.conferir(acTnu2({ sig: null, abre, fecho: UNAN2 }), T2, "TNU"), abre);
+    // assinado por quem tem o mesmo último sobrenome do relator (o defeito original): continua suspeito
+    suspeito2(lib.conferir(acTnu2({ sig: "MARIA DA SILVA", abre, fecho: UNAN2 }), T2, "TNU"), `MARIA/${abre}`);
+  }
+  // o relator assina, mas o fecho diz "vencido o relator": a vênia volta a contar
+  const r = lib.conferir(acTnu2({ sig: "FABIO DE SOUZA SILVA", abre: "Peço vênia para divergir, pois", fecho: "A TNU decidiu, por maioria, vencido o relator, dar provimento." }), T2, "TNU");
+  assert.ok(r.alertas.some((a) => a.startsWith("VOTO DIVERGENTE")), JSON.stringify(r.alertas));
+  // assinatura só com o último sobrenome ("SILVA") não é prova de que o relator assina
+  suspeito2(lib.conferir(acTnu2({ sig: "SILVA", abre: "Peço vênia ao relator para divergir, pois", fecho: UNAN2 }), T2, "TNU"), "SILVA");
+});
+
+test("red team 22/10 rodada 3 (achado 4) '[...]' com o 1º fragmento repetido na ementa e no voto: tenta a ocorrência seguinte", () => {
+  const enche = (n) => Array.from({ length: n }, (_, i) => `Consta dos autos o documento numero ${i} juntado regularmente pela parte.`).join(" ");
+  const texto = `EMENTA\nPREVIDENCIARIO. O beneficio assistencial e devido a pessoa com deficiencia. Recurso desprovido.\n${enche(40)}\nVOTO\nO relator. O beneficio assistencial e devido a pessoa com deficiencia de baixa renda, conforme a lei. No caso, a pericia confirmou o impedimento de longo prazo da autora.\n`;
+  const t = "o benefício assistencial é devido à pessoa com deficiência [...] a perícia confirmou o impedimento de longo prazo";
+  const r = lib.conferir(texto, t, "TRF1");
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.ok(r.spans[0][0] > 2000 && r.spans[1][0] - r.spans[0][1] < 200, JSON.stringify(r.spans));   // a âncora é a do voto
+  // partes realmente distantes continuam recusadas
+  const longe = `VOTO\nO beneficio assistencial e devido a pessoa com deficiencia. ${enche(40)} Ao final, a pericia confirmou o impedimento de longo prazo.`;
+  const r2 = lib.conferir(longe, t, "TRF1");
+  assert.ok(!r2.ok && /não pode costurar partes distantes/.test(r2.erro || ""), JSON.stringify(r2));
+  // fragmento seguinte inexistente: a mesma resposta de antes
+  const r3 = lib.conferir(texto, "o benefício assistencial é devido à pessoa com deficiência [...] frase que não existe em parte alguma do texto", "TRF1");
+  assert.ok(!r3.ok && !r3.erro && /frase que não existe/.test(r3.fragmento), JSON.stringify(r3));
+});
+
+test("red team 22/10 rodada 3 (achado 5) bruto() no raio do documento inteiro não é mais quadrático e dá a mesma posição do laço exato", () => {
+  // compressão desigual (planilha de linhas curtas): o chute proporcional erra por mais de 2000 e cai no raio do documento inteiro
+  const corpo = Array.from({ length: 3000 }, (_, i) => ` d${i % 10}   \n  \t `).join("") + "\nVOTO\n" + "O relator. Peço vênia ao relator para divergir, pois a renda é baixa. ".repeat(200);
+  const tn = lib.norm(corpo);
+  // referência: o laço exato antigo, só nas posições sorteadas
+  const exato = (posNorm) => {
+    const alvo = lib.norm(tn.slice(posNorm, posNorm + 40)).slice(0, 24);
+    const k = lib.norm(corpo).indexOf(alvo);
+    let conta = 0;
+    for (let i = 0; i < corpo.length; i++) { const c = lib.norm(corpo.slice(0, i + 1)).length; if (c > conta) conta = c; if (conta > k) return i; }
+    return 0;
+  };
+  const t0 = Date.now();
+  const ps = [Math.floor(tn.length * 0.55), Math.floor(tn.length * 0.8), tn.length - 300];
+  const got = ps.map((p) => lib.bruto(corpo, tn, p));
+  const ms = Date.now() - t0;
+  assert.ok(ms < 3000, `bruto levou ${ms} ms`);
+  for (let i = 0; i < ps.length; i++) {
+    assert.equal(lib.norm(corpo.slice(got[i], got[i] + 30)).slice(0, 10), tn.slice(ps[i], ps[i] + 10).trim().slice(0, 10), `posição ${ps[i]}`);
+  }
+  assert.equal(got[0], exato(ps[0]));
+});
+
+test("red team 22/10 rodada 3 (fail-closed à toa) fragmentos repetidos ('X Votante : [...] X Votante :') são localizados no bruto: sem 'ATRIBUIÇÃO NÃO ANALISADA'", () => {
+  const lin = (n) => `Juiz Federal ${n} Votante : acompanha o relator`;
+  const texto = "Documento:1\nTIMBRE\nRELATOR : Juiz Federal FULANO DE TAL\nVOTO\nNego provimento ao pedido, pois a tese não se sustenta no caso concreto.\nassinado por FULANO DE TAL,\n" +
+    "Documento:2\nEXTRATO DE ATA\nCERTIDÃO DE JULGAMENTO\n" + ["CAIO MOYSES DE LIMA", "CAIO MOYSES DE LIMA", "ANA PAULA REIS", "BRUNO COSTA"].map(lin).join("\n") + "\n";
+  const r = lib.conferir(texto, "Juiz Federal CAIO MOYSES DE LIMA Votante : [...] Juiz Federal CAIO MOYSES DE LIMA Votante :", "TNU");
+  assert.ok(r.ok && !r.alertas.some((a) => a.startsWith("ATRIBUIÇÃO NÃO ANALISADA")), JSON.stringify(r.alertas));
+  // unidade: a âncora mais próxima não fecha a cadeia, a seguinte fecha
+  const nt = "aa bb x aa bb y aa bb";
+  assert.deepEqual(lib.faixaNorm(nt, ["aa bb", "aa bb"], 0.99), [8, 21]);
 });
