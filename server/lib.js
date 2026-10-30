@@ -17,7 +17,7 @@ import { checarSemanal } from "./semana.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.8.0";
+export const VERSAO = "1.8.1";
 // v1.8.0: o repositório Python (trf1-jurisprudencia-mcp) está arquivado e não aceita issue; relato e User-Agent apontam o atual.
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcpb";
 
@@ -28,6 +28,16 @@ export const SITE = "https://jurisprudencia.cjf.jus.br";
 // TRF1 e Colegiado vão para lá; a TNU usa o portal próprio dela (SITE_TNU). Se o captcha chegar a esse
 // host, a consulta falha fechada — nunca se contorna.
 export const SITE_TRF1 = "https://antiga-jurisprudencia.cjf.jus.br";
+// v1.8.1 (medido 30/10/2026, por janela de datas): nesse host, a fonte TRF1 (2º grau) para em 29/02/2024; JEF1 e Colegiado seguem
+// atualizados. Por isso, na fonte TRF1, zero nunca significa "não existe": a resposta sai como PESQUISA INCOMPLETA.
+export const ACERVO_TRF1_FIM = "29/02/2024";
+export const AVISO_ACERVO_TRF1 = `a versão antiga do portal do CJF, única acessível a esta extensão, só tem acórdãos do TRF1 (2º grau) julgados até ${ACERVO_TRF1_FIM}. ` +
+  "Decisão posterior NÃO aparece aqui e a ausência não é \"não localizado\". Para o período seguinte, pesquise em jurisprudencia.cjf.jus.br no navegador";
+export function depoisDoAcervoTrf1(dataBr) {
+  const inv = (d) => String(d || "").split("/").reverse().join("");
+  return inv(dataBr) > inv(ACERVO_TRF1_FIM);
+}
+export const linhaAcervoTrf1 = () => `⚠️ Acervo limitado: ${AVISO_ACERVO_TRF1}.\n\n`;
 export function endpointPortal(base) {
   return (base === "tnu" ? SITE : SITE_TRF1) + BASES[base].caminho;
 }
@@ -2641,6 +2651,8 @@ export async function consultarPortal(consulta, tipos, fontes, pagina, porPagina
     const msgs = extrairMensagens(xmlB);
     if (msgs.length) throw new PesquisaNaoRealizada("o portal recusou a CONSULTA (não é resultado vazio): " + msgs.join(" | ") + " — corrija a sintaxe/os filtros e refaça");
     const htmlForm = extrairUpdate(xmlB, "formulario");
+    // v1.8.1: resposta sem o bloco de resultados é falha, nunca "0 documentos"
+    if (!htmlForm) throw new PesquisaNaoRealizada("o portal respondeu sem o bloco de resultados (XML válido, mas sem o formulário) — o layout pode ter mudado");
     const total = extrairTotal(htmlForm);
     let htmlDocs = htmlForm;
     const first = (pagina - 1) * porPagina;
@@ -2894,7 +2906,7 @@ export async function consultarTnu(consulta, tipos, pagina, porPagina, avancados
 export function carimboNaoRealizada(motivo) {
   const m = String(motivo).trim().replace(/\.$/, "");
   let ajuda = "";
-  if (!/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed|CAPTCHA/.test(m)) {   // captcha do CJF: não há o que o autor corrija
+  if (!/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed|CAPTCHA|versão antiga do portal/.test(m)) {   // captcha do CJF: não há o que o autor corrija
     ajuda = `\nSe persistir, relate: ${linkRelato(tipoDoErro(m))}` +
       "\n`diagnostico_erros_trf1` com relatorio=true gera o relatório técnico já sanitizado para colar na issue.";
   }
@@ -2965,11 +2977,17 @@ export async function buscar(a, fetchImpl = fetch, env = process.env) {
     if (!consultaMontada && !Object.keys(avancados).length && !tipoAcordaoV.length) {
       throw new ErroDeParametro("Informe a consulta, ou grupos de termos, ou pelo menos um filtro.");
     }
+    const cobreTrf1 = base === "trf1" && fontes.includes("TRF1");
+    if (cobreTrf1 && fontes.length === 1 && avancados.data_inicio && depoisDoAcervoTrf1(avancados.data_inicio)) {
+      throw new PesquisaNaoRealizada(`o período pedido começa depois do fim do acervo: ${AVISO_ACERVO_TRF1}. As Turmas Recursais seguem atualizadas: use fonte=["JEF1"]`);
+    }
     const dados = await consultarPortal(consultaMontada, tipos, fontes, pagina, porPagina, avancados, tipoData, "busca", base, tipoAcordaoV, fetchImpl, env);
     gravarRecibosDaBusca(dados.docs, null, env);   // v1.6.0 (porte do TJRO v1.31, H01): a lista já trouxe o texto; guardar evita reabrir o número só para citar
     const meta = { consulta_montada: consultaMontada, tipos, fontes, pagina, por_pagina: porPagina, filtros: avancados,
       avisos: dados.avisos, base, tipo_acordao: tipoAcordaoV };
-    return limitarSaidaBusca(formatBusca(dados.docs, dados.total, meta), SAIDA_MAX_CHARS, pagina, porPagina) + linhaDeRitmo();
+    const saidaBusca = limitarSaidaBusca(formatBusca(dados.docs, dados.total, meta), SAIDA_MAX_CHARS, pagina, porPagina) + linhaDeRitmo();
+    if (!cobreTrf1) return saidaBusca;
+    return (dados.total ? linhaAcervoTrf1() : `[PESQUISA INCOMPLETA — zero resultado, mas ${AVISO_ACERVO_TRF1}]\n`) + saidaBusca;
   } catch (e) {
     if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(String(e.message).trim().replace(/\.+$/, "") + dicaConsultaGrande(e.message, consultaMontada || "", a.grupos));
     // v1.6.0: só erro de validação é de parâmetro; o resto (rede, timeout na leitura do corpo, bug) é pesquisa NÃO realizada
@@ -3019,12 +3037,24 @@ export async function obterDecisao(numero, base = "trf1", modo = "completo", fet
     if (e instanceof ErroDeParametro) return erroDeParametro(e);
     return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
-  const gravados = docs.map((d) => gravarRecibo(d, env)).filter(Boolean);
   const num = digitos.length === 20 ? cnj(digitos) : numero;
+  if (!docs.length && base === "trf1") return semDocumentoTrf1(num, digitos, modo, env);
+  const gravados = docs.map((d) => gravarRecibo(d, env)).filter(Boolean);
   let saida = modo === "triagem" ? formatTriagem(docs, num, dados.total) : formatDecisao(docs, num, dados.total);
   if (gravados.length) saida += `\nRecibo(s) gravado(s) em ${DIR_RECIBOS(env)} (${gravados.length}): o lint da peticao-rg e o revisor-adversarial conferem a ficha contra esse arquivo, sem nova requisição.`;
   for (const av of dados.avisos || []) saida = `⚠️ ${av}\n` + saida;
-  return saida;
+  return base === "trf1" ? linhaAcervoTrf1() + saida : saida;
+}
+
+/** v1.8.1: número não achado na fonte TRF1 nunca vira "nenhum documento publicado"; se houver recibo local, ele é mostrado, com a origem dita. */
+export function semDocumentoTrf1(num, digitos, modo = "completo", env = process.env) {
+  const recs = recibosDoProcesso(digitos, "trf1", env);
+  const cab = `[PESQUISA INCOMPLETA — o número ${num} não apareceu, mas ${AVISO_ACERVO_TRF1}]\nIsto NÃO é "não localizado" nem prova de que não exista publicação.\n`;
+  if (!recs.length) return cab + "Não há recibo local deste número.";
+  const docs = recs.map((r) => docDeRecibo(r, env));
+  const lidos = recs.map((r) => `id ${r.id_documento} (lido em ${String(r.obtido_em || "?").slice(0, 10)})`).join("; ");
+  const corpo = modo === "triagem" ? formatTriagem(docs, num, docs.length) : formatDecisao(docs, num, docs.length);
+  return `${cab}O que segue vem do RECIBO LOCAL, lido antes do captcha do CJF, não do portal de hoje: ${lidos}.\n\n${corpo}`;
 }
 
 export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl = fetch, env = process.env) {
@@ -3069,6 +3099,12 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
     }
     if (e instanceof ErroDeParametro) return erroDeParametro(e);
     return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
+  }
+  if (!docs.length && base === "trf1") {
+    const dg = soDigitos(numero);
+    const nRec = recibosDoProcesso(dg, "trf1", env).length;
+    return `[PESQUISA INCOMPLETA — o número ${numero} não apareceu, mas ${AVISO_ACERVO_TRF1}]\nNão há como verificar por aqui; isto NÃO é ❌ nem "não localizado".` +
+      (nRec ? ` Há ${nRec} recibo(s) local(is) deste número, e o trecho não foi confirmado neles.` : "");
   }
   if (!docs.length) return `Nenhum documento sob o número ${numero} na base ${base} — não há como verificar; não cite.`;
   const rotulo = BASES[base].rotulo;
@@ -3584,6 +3620,12 @@ const paraInt = (v, rotulo) => {
 };
 
 export async function julgadosQueCitam(a = {}, fetchImpl = fetch, env = process.env) {
+  const t = await julgadosQueCitamNoPortal(a, fetchImpl, env);
+  const trf1 = String(a.base || "trf1").trim().toLowerCase() === "trf1";
+  return trf1 && !/^\[PESQUISA NÃO REALIZADA|^Erro de parâmetro/.test(t) ? linhaAcervoTrf1() + t : t;
+}
+
+async function julgadosQueCitamNoPortal(a, fetchImpl, env) {
   let base, dig, limite, dados;
   try {
     base = validarBase(a.base);
@@ -3657,7 +3699,10 @@ export async function linhaDoTempo(a = {}, fetchImpl = fetch, env = process.env)
   }
   const filtros = `${consultaM} · ${ai}–${af}` + (orgao ? ` · órgão: ${orgao}` : "");
   const linhas = [];
-  for (let ano = ai; ano <= af; ano++) {
+  // v1.8.1: ano depois do fim do acervo não é consultado — sairia zero, que aqui pareceria mudança de entendimento
+  const ultimoAno = Number(ACERVO_TRF1_FIM.slice(-4));
+  if (ai > ultimoAno) return carimboNaoRealizada(`os anos pedidos ficam depois do fim do acervo: ${AVISO_ACERVO_TRF1}`);
+  for (let ano = ai; ano <= Math.min(af, ultimoAno); ano++) {
     const av = { data_inicio: `01/01/${ano}`, data_fim: `31/12/${ano}` };
     if (orgao && String(orgao).trim()) av.orgao_julgador = String(orgao).trim();
     let dados;
@@ -3674,7 +3719,7 @@ export async function linhaDoTempo(a = {}, fetchImpl = fetch, env = process.env)
     const res = Object.keys(ROTULOS_RESULTADO).filter((k) => r.contagem[k]).map((k) => [ROTULOS_RESULTADO[k], r.contagem[k]]);
     linhas.push({ ano, total: dados.total, julgamentos: r.total_julgamentos, res });
   }
-  return formatarLinhaDoTempo(linhas, filtros);
+  return formatarLinhaDoTempo(linhas, filtros, af >= ultimoAno ? `linha do tempo só até ${ACERVO_TRF1_FIM}; ${AVISO_ACERVO_TRF1}` : "");
 }
 
 // ---------------------------------------------------------------- crédito e versão ---

@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.8.0");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.8.1");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -1689,4 +1689,51 @@ test("v1.8.0 captcha do CJF: falha fechada, não pausa o disjuntor (a TNU segue)
   assert.ok(r2.includes("não tenta o CJF de novo") && chamadasCjf === 1, r2.slice(0, 300));
   const r3 = await lib.buscar({ consulta: "aposentadoria", base: "tnu" }, f, env);
   assert.ok(r3.includes("728"), r3.slice(0, 300));   // sem pausa do disjuntor: a TNU, em outro portal, continua
+});
+
+test("v1.8.1 fonte TRF1 acaba em 29/02/2024: zero nunca é ausência; recibo local aparece; fora do acervo não gasta requisição", async (t) => {
+  comEstadoLimpo(t);
+  lib._setCaptchaCjfParaTeste(0);
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const xmlZero = '<partial-response><changes><update id="formulario"><![CDATA[<div>rowCount:0</div>]]></update></changes></partial-response>';
+  let chamadas = 0;
+  const f = async (url, init = {}) => {
+    chamadas++;
+    if (!init.method || init.method === "GET") return new Response(ler("01_index.html"), { status: 200, headers: { "content-type": "text/html;charset=UTF-8" } });
+    if (/ckbAvancada/.test(String(init.body)) && !/actPesquisar/.test(String(init.body))) return respXml(ler("05_ckbavancada.xml"));
+    return respXml(xmlZero);
+  };
+  const b = await lib.buscar({ consulta: "aposentadoria" }, f, env);
+  assert.ok(b.startsWith("[PESQUISA INCOMPLETA") && b.includes("29/02/2024"), b.slice(0, 200));
+  const n = "1001893-14.2024.4.01.4103";
+  const o = await lib.obterDecisao(n, "trf1", "completo", f, env);
+  assert.ok(o.startsWith("[PESQUISA INCOMPLETA") && !o.includes("Nenhum documento") && o.includes("Não há recibo local"), o.slice(0, 300));
+  const v = await lib.verificarCitacao(n, "frase qualquer de teste para conferir", "trf1", f, env);
+  assert.ok(v.startsWith("[PESQUISA INCOMPLETA") && !v.includes("Nenhum documento"), v.slice(0, 300));
+  // com recibo local do mesmo número, obter_decisao mostra o recibo e diz de onde veio
+  const d0 = { ...docsDoFixture("02_busca_dano_moral.xml", "trf1")[0], numero: n, numero_digitos: lib.soDigitos(n) };
+  assert.ok(lib.gravarRecibo(d0, env));
+  const o2 = await lib.obterDecisao(n, "trf1", "completo", f, env);
+  assert.ok(o2.startsWith("[PESQUISA INCOMPLETA") && o2.includes("RECIBO LOCAL") && o2.includes(d0.id) && o2.includes(n), o2.slice(0, 400));
+  // período todo depois do acervo: não vai ao portal; JEF1 continua indo
+  chamadas = 0;
+  const p = await lib.buscar({ consulta: "x", data_inicio: "2025-01-01" }, f, env);
+  assert.ok(p.startsWith("[PESQUISA NÃO REALIZADA") && p.includes("JEF1") && chamadas === 0, p.slice(0, 300));
+  const j = await lib.buscar({ consulta: "x", fonte: ["JEF1"], data_inicio: "2025-01-01" }, f, env);
+  assert.ok(!j.startsWith("[PESQUISA") && chamadas > 0, j.slice(0, 200));
+  // linha do tempo: anos depois do acervo não viram zero
+  assert.match(await lib.linhaDoTempo({ consulta: "x", ano_inicio: 2025, ano_fim: 2026 }, f, env), /^\[PESQUISA NÃO REALIZADA/);
+});
+
+test("v1.8.1 resposta sem lista nunca vira zero: HTML inesperado e XML sem o formulário são PESQUISA NÃO REALIZADA", async (t) => {
+  comEstadoLimpo(t);
+  lib._setCaptchaCjfParaTeste(0);
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const form = () => new Response(ler("01_index.html"), { status: 200, headers: { "content-type": "text/html;charset=UTF-8" } });
+  const f1 = async (url, init = {}) => (!init.method || init.method === "GET") ? form() : new Response("<html>algo</html>", { status: 200, headers: { "content-type": "text/html" } });
+  assert.match(await lib.buscar({ consulta: "dano" }, f1, env), /^\[PESQUISA NÃO REALIZADA/);
+  const f2 = async (url, init = {}) => (!init.method || init.method === "GET") ? form() : respXml("<partial-response><changes></changes></partial-response>");
+  assert.match(await lib.buscar({ consulta: "dano" }, f2, env), /^\[PESQUISA NÃO REALIZADA.*bloco de resultados/s);
+  assert.equal(lib.tipoDoErro("x"), "outro");
 });

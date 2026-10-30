@@ -49,6 +49,8 @@ server.registerTool(
       "Pesquisa jurisprudência do Tribunal Regional Federal da 1ª Região (TRF1 + Turmas Recursais/JEF1) " +
       "e da Turma Nacional de Uniformização (TNU), sem login. TRF1 e Colegiado: versão antiga da Jurisprudência Unificada do CJF " +
       "(antiga-jurisprudencia.cjf.jus.br, publicada pelo próprio CJF); TNU: portal de jurisprudência próprio da TNU (eproc). " +
+      "ATENÇÃO: nessa versão antiga, os acórdãos do TRF1 (fonte padrão) só vão até 29/02/2024; a fonte JEF1, a TNU e o Colegiado seguem atualizados. " +
+      "Zero na fonte TRF1 sai como [PESQUISA INCOMPLETA] e nunca é \"não localizado\". " +
       "Se o CJF responder com CAPTCHA, a busca sai como [PESQUISA NÃO REALIZADA] e não se contorna. " +
       "Bases: 'trf1' (padrão — acórdãos/súmulas/arguições/monocráticas, painel avançado, voto NÃO exposto); " +
       "'tnu' (PUIL etc., tipo_acordao=RELEVANTE para precedentes relevantes — o portal da TNU não filtra Representativo de Controvérsia, use o BNP; " +
@@ -81,7 +83,7 @@ server.registerTool(
     inputSchema: {
       consulta: z.string().default("").describe("Consulta livre na sintaxe do motor (pode ser \"\" quando usar grupos)."),
       tipo: z.array(z.string()).optional().describe("Tipos de documento. Padrão [\"ACORDAO\"]. Depende da base."),
-      fonte: z.array(z.enum(["TRF1", "JEF1"])).optional().describe("Só na base 'trf1'. Padrão [\"TRF1\"]."),
+      fonte: z.array(z.enum(["TRF1", "JEF1"])).optional().describe("Só na base 'trf1'. Padrão [\"TRF1\"] (acórdãos só até 29/02/2024); JEF1 = Turmas Recursais, atualizadas."),
       grupos: z
         .array(z.array(z.string()))
         .optional()

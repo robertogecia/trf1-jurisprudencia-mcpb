@@ -123,6 +123,11 @@ O que você recebe de volta:
 
 ## O que ela NÃO faz (leia antes de confiar)
 
+- **Os acórdãos do TRF1 (2º grau) só vão até 29/02/2024.** Desde o captcha do CJF (28/10/2026), a
+  extensão só alcança a versão antiga do portal, parada nessa data para o TRF1. Decisão posterior
+  não aparece, e a resposta avisa: `[PESQUISA INCOMPLETA]`, nunca "não localizado". Para o período
+  seguinte, pesquise em `jurisprudencia.cjf.jus.br` pelo navegador. As Turmas Recursais (fonte JEF1),
+  a TNU e o Colegiado seguem atualizados.
 - **Na base do TRF1, o portal nunca expõe o voto** — só ementa e dispositivo. O inteiro teor dos
   casos antigos fica atrás de verificação anti-robô que esta extensão não contorna; o link fica
   na citação para você abrir no navegador. A conferência de citação cobre o que o portal expõe e
@@ -141,7 +146,7 @@ O que você recebe de volta:
 | Dei dois cliques no `.mcpb` e **não abriu nada** | Use o caminho alternativo do Passo 2: Claude Desktop → Configurações → Extensões, e arraste o arquivo para essa janela. |
 | Instalei, mas o Claude diz que **não tem essa ferramenta** | Abra uma **conversa nova**. Confira também se a extensão aparece **ativada** em Configurações → Extensões. |
 | A resposta veio como `[PESQUISA NÃO REALIZADA — …]` | Não é "não localizado" — é "não perguntei". A própria mensagem diz o motivo (ritmo, bloqueio, rede) e quando tentar de novo; peça ao Claude "rode o diagnóstico do TRF1". |
-| Até a v1.7.5, toda busca falhava desde 28/10/2026 com "o portal respondeu algo inesperado" | O CJF lançou um portal novo e passou a pedir **captcha** no endereço que a extensão usava. Atualize para a **v1.8.0**: o TRF1 passa a ser pesquisado na versão antiga que o próprio CJF mantém publicada, e a TNU no portal próprio da TNU. Se o captcha aparecer também lá, a busca sai como `[PESQUISA NÃO REALIZADA]`: a extensão não contorna captcha. Pesquise no site pelo navegador e traga o número para conferir. |
+| Até a v1.7.5, toda busca falhava desde 28/10/2026 com "o portal respondeu algo inesperado" | O CJF lançou um portal novo e passou a pedir **captcha** no endereço que a extensão usava. Atualize para a versão mais recente: o TRF1 passa a ser pesquisado na versão antiga que o próprio CJF mantém publicada (acórdãos só até 29/02/2024), e a TNU no portal próprio da TNU. Se o captcha aparecer também lá, a busca sai como `[PESQUISA NÃO REALIZADA]`: a extensão não contorna captcha. Pesquise no site pelo navegador e traga o número para conferir. |
 | Erro de rede em toda busca, mas o portal abre no navegador | Veja se há [versão nova](https://github.com/robertogecia/trf1-jurisprudencia-mcpb/releases/latest) (a própria mensagem de erro avisa quando há) e, se não houver, [relate o problema](../../issues). |
 | Não tenho o Claude Desktop, só uso pelo site ou pelo celular | A pesquisa **não funciona** nesses casos — precisa do programa instalado no computador. |
 | Nenhuma linha acima resolveu | Peça ajuda a alguém do escritório com mais prática em informática mostrando esta tabela — ou [abra uma issue](../../issues) descrevendo o que aconteceu (sem número de processo: a página é pública). |
@@ -238,7 +243,9 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
 - **Fontes (v1.8.0, 29/10/2026).** Em 28/10/2026 o CJF lançou um portal novo em `jurisprudencia.cjf.jus.br`
   e pôs captcha (F5, "Verificação de Segurança") no caminho antigo desse host. A extensão agora usa:
   - **TRF1 e Colegiado:** `antiga-jurisprudencia.cjf.jus.br`, a mesma aplicação JSF de antes, publicada
-    pelo próprio CJF como "versão antiga do sistema" no portal novo, sem captcha.
+    pelo próprio CJF como "versão antiga do sistema" no portal novo, sem captcha. Medido em 30/10/2026:
+    a fonte TRF1 para em 29/02/2024; JEF1 e Colegiado têm decisões de 2026. Zero na fonte TRF1 sai como
+    `[PESQUISA INCOMPLETA]`, e `obter_decisao_trf1` mostra o recibo local, se houver.
   - **TNU:** `eproctnu-jur.cjf.jus.br`, o portal de jurisprudência próprio da TNU (eproc). É um formulário
     HTTP comum, com uma requisição por busca. A consulta é traduzida antes de sair, porque um operador
     que esse motor não conhece não dá erro, dá "0 documentos": `ADJn`/`PROXn` viram `prox`, `NAO`
