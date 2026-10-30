@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.8.1");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.9.0");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -1736,4 +1736,65 @@ test("v1.8.1 resposta sem lista nunca vira zero: HTML inesperado e XML sem o for
   const f2 = async (url, init = {}) => (!init.method || init.method === "GET") ? form() : respXml("<partial-response><changes></changes></partial-response>");
   assert.match(await lib.buscar({ consulta: "dano" }, f2, env), /^\[PESQUISA NÃO REALIZADA.*bloco de resultados/s);
   assert.equal(lib.tipoDoErro("x"), "outro");
+});
+
+const itemDjen = (over = {}) => ({ id: 1, datadisponibilizacao: "23/10/2026", nomeOrgao: "3ª Vara Federal Cível da SJRO", tipoDocumento: "Sentença Tipo A",
+  nomeClasse: "PROCEDIMENTO COMUM CÍVEL", numeroprocessocommascara: "1001893-14.2024.4.01.4103", link: "https://pje1g.trf1.jus.br/doc?x=1",
+  texto: "Vistos. Trata-se de pedido sobre aposentadoria compulsória de servidor. Julgo procedente.", ...over });
+const respDjen = (items, count = items.length) => async () => new Response(JSON.stringify({ status: "success", message: "Sucesso", count, items }), { status: 200, headers: { "content-type": "application/json" } });
+
+test("v1.9.0 DJEN: grau pelo órgão", () => {
+  assert.equal(lib.grauDoOrgao("23ª Vara Federal de Juizado Especial Cível da SJDF"), "1");
+  assert.equal(lib.grauDoOrgao("Vara Federal Cível e Criminal da SSJ de Vilhena-RO"), "1");
+  assert.equal(lib.grauDoOrgao("Gab. 25 - DESEMBARGADOR FEDERAL URBANO LEAL BERQUÓ NETO"), "2");
+  assert.equal(lib.grauDoOrgao("3ª Relatoria da 1ª Turma Recursal da SJRO"), "recursal");
+  assert.equal(lib.grauDoOrgao("1ª Turma Recursal da SJGO"), "recursal");
+  assert.equal(lib.grauDoOrgao("Órgão desconhecido"), "");
+});
+
+test("v1.9.0 DJEN: busca, filtro local, link real, HTML limpo, sem recibo", async (t) => {
+  comEstadoLimpo(t);
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const urls = [];
+  const base = respDjen([itemDjen(), itemDjen({ id: 2, nomeOrgao: "Gab. 04 - DESEMBARGADORA FEDERAL", tipoDocumento: "Intimação", texto: "<p>EMENTA. aposentadoria compulsória.</p>", link: "https://pje2g.trf1.jus.br/doc?x=2" })], 236);
+  const f = async (u, i) => { urls.push(String(u)); return base(u, i); };
+  const out = await lib.buscarDjen({ consulta: "aposentadoria compulsória" }, f, env);
+  assert.ok(out.includes("236 publicação") && out.includes("Sentença Tipo A") && out.includes("doc?x=2") && out.includes("traz ementa") && !out.includes("<p>"), out.slice(0, 500));
+  assert.ok(out.includes("não jurisprudência selecionada"));
+  assert.ok(urls[0].includes("siglaTribunal=TRF1") && urls[0].includes("dataDisponibilizacaoInicio="));
+  const s1 = await lib.buscarDjen({ consulta: "aposentadoria compulsória", so_sentencas: true }, f, env);
+  assert.ok(s1.includes("1 de 2 desta página") && !s1.includes("doc?x=2"), s1.slice(0, 400));
+  const g2 = await lib.buscarDjen({ consulta: "aposentadoria compulsória", grau: "2" }, f, env);
+  assert.ok(g2.includes("doc?x=2") && !g2.includes("doc?x=1"), g2.slice(0, 400));
+  assert.equal(fs.readdirSync(dir).length, 0);   // publicação traz nomes de partes: nada vai para os recibos
+});
+
+test("v1.9.0 DJEN: nada vira 'não localizado'; operador é erro de parâmetro; falha é NÃO REALIZADA", async (t) => {
+  comEstadoLimpo(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const z = await lib.buscarDjen({ consulta: "frase rara", data_inicio: "2024-06-01" }, respDjen([]), env);
+  assert.ok(z.startsWith("[PESQUISA INCOMPLETA") && z.includes("frase exata") && z.includes("01/06/2025"), z.slice(0, 400));
+  let chamou = 0;
+  const f = async () => { chamou++; return new Response("{}", { status: 200 }); };
+  for (const c of ["aposentadoria E especial", "a OU b", "embarg*", "silva[REL]", "a PROX3 b"]) assert.match(await lib.buscarDjen({ consulta: c }, f, env), /^Erro de parâmetro/);
+  assert.match(await lib.buscarDjen({}, f, env), /^Erro de parâmetro/);
+  assert.match(await lib.buscarDjen({ numero: "123" }, f, env), /^Erro de parâmetro/);
+  assert.equal(chamou, 0);
+  assert.match(await lib.buscarDjen({ consulta: "x" }, f, env), /^\[PESQUISA NÃO REALIZADA.*sem a lista/s);
+  const html = async () => new Response("<html>fora</html>", { status: 200, headers: { "content-type": "text/html" } });
+  assert.match(await lib.buscarDjen({ consulta: "x" }, html, env), /^\[PESQUISA NÃO REALIZADA.*JSON/s);
+  const c = await lib.buscarDjen({ consulta: "aposentadoria" }, respDjen([itemDjen()], 10000), env);
+  assert.ok(c.includes("10000 ou mais"), c.slice(0, 200));
+});
+
+test("v1.9.0 DJEN: por número não limita a data e completo traz o texto integral", async (t) => {
+  comEstadoLimpo(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const urls = [];
+  const longo = "x ".repeat(2000) + "FIM DO TEXTO";
+  const base = respDjen([itemDjen({ texto: longo })]);
+  const out = await lib.buscarDjen({ numero: "1001893-14.2024.4.01.4103", completo: true }, async (u, i) => { urls.push(String(u)); return base(u, i); }, env);
+  assert.ok(urls[0].includes("numeroProcesso=10018931420244014103") && !urls[0].includes("dataDisponibilizacaoInicio"), urls[0]);
+  assert.ok(out.includes("FIM DO TEXTO"));
 });

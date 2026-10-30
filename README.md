@@ -126,8 +126,11 @@ O que você recebe de volta:
 - **Os acórdãos do TRF1 (2º grau) só vão até 29/02/2024.** Desde o captcha do CJF (28/10/2026), a
   extensão só alcança a versão antiga do portal, parada nessa data para o TRF1. Decisão posterior
   não aparece, e a resposta avisa: `[PESQUISA INCOMPLETA]`, nunca "não localizado". Para o período
-  seguinte, pesquise em `jurisprudencia.cjf.jus.br` pelo navegador. As Turmas Recursais (fonte JEF1),
-  a TNU e o Colegiado seguem atualizados.
+  seguinte, use a busca no DJEN (abaixo) ou `jurisprudencia.cjf.jus.br` pelo navegador. As Turmas
+  Recursais (fonte JEF1), a TNU e o Colegiado seguem atualizados.
+- **Sentenças e decisões de 1º grau só pelo DJEN.** `buscar_djen_trf1` acha o que foi publicado como
+  intimação, por frase exata ou número do processo, com volume desde meados de 2025. É publicação, não
+  jurisprudência selecionada: nem todo acórdão vem inteiro, e zero não é "não localizado".
 - **Na base do TRF1, o portal nunca expõe o voto** — só ementa e dispositivo. O inteiro teor dos
   casos antigos fica atrás de verificação anti-robô que esta extensão não contorna; o link fica
   na citação para você abrir no navegador. A conferência de citação cobre o que o portal expõe e
@@ -209,7 +212,7 @@ mandar, baixa o instalador para a pasta Downloads (SHA-256 conferido); depois é
 
 ## Ferramentas
 
-Nove ferramentas: `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`
+Dez ferramentas: `buscar_djen_trf1` (publicações do DJEN: sentenças de 1º grau e acórdãos recentes), `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`
 (`modo="triagem"` para a leitura barata), `verificar_citacao_trf1`, `diagnostico_ritmo_trf1`
 (`relatorio=true` para o relatório do livro-razão de requisições) e, desde a v1.5.0, `buscar_recibos_trf1`
 (busca local, sem rede, nos recibos já gravados), `julgados_que_citam_trf1`, `linha_do_tempo_trf1`
@@ -253,6 +256,9 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
     Há filtros de relator, classe, número e datas, e `tipo_acordao=RELEVANTE`. Representativo de
     Controvérsia não existe nesse portal: o caminho é o BNP.
   - **A API do portal novo não é usada:** o `robots.txt` dele proíbe `/api/`.
+  - **DJEN (v1.9.0):** `comunicaapi.pje.jus.br`, API pública do CNJ, sem restrição no `robots.txt`. `texto`
+    é frase em ordem; operador vira erro de parâmetro, porque daria zero falso. A contagem para em 10.000, e
+    grau e sentença são filtros locais da página. Não grava recibo, porque o texto traz nomes de partes.
   - **Captcha nunca se contorna:** nem navegador automatizado, nem cookie copiado do navegador, nem
     captcha repassado ao usuário. Se aparecer, a resposta é `[PESQUISA NÃO REALIZADA]` e o TRF1/Colegiado
     não é tentado de novo por 30 minutos. Isso não pausa o disjuntor, que é compartilhado com a TNU.

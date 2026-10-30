@@ -14,6 +14,7 @@ import {
   GRUPOS_MAX,
   TERMOS_POR_GRUPO_MAX,
   POR_PAGINA_VALIDOS,
+  buscarDjen,
   TIPOS_ACORDAO_TNU,
   buscar,
   obterDecisao,
@@ -287,6 +288,33 @@ server.registerTool(
     try { t = diagnosticoRitmoTexto() + (a?.relatorio ? "\n\n" + relatorioDeRitmo() : ""); } catch (e) { t = carimboNaoRealizada(`diagnóstico falhou (${e.name}: ${e.message})`); }
     return { content: [{ type: "text", text: await comAvisos(t) }] };
   }
+);
+
+server.registerTool(
+  "buscar_djen_trf1",
+  {
+    title: "Buscar publicações da Justiça Federal da 1ª Região no DJEN",
+    description:
+      "Busca no DJEN (Diário de Justiça Eletrônico Nacional, API pública do CNJ) as publicações da Justiça Federal da 1ª Região, por frase ou por " +
+      "número de processo. É o caminho para SENTENÇAS e decisões de 1º grau (Varas e Juizados Federais), que a pesquisa de jurisprudência não tem, e para " +
+      "acórdãos do TRF1 posteriores a 29/02/2024, que a versão antiga do portal do CJF não alcança. " +
+      "A consulta é uma FRASE exata, na ordem digitada: não há operadores, truncamento nem sinônimos, e a recusa disso é erro de parâmetro. Sem data_inicio, busca os últimos 180 dias. " +
+      "Limites: o TRF1 só publica com volume no DJEN desde meados de 2025; só aparece o que saiu como intimação; nem todo acórdão vem inteiro (\"traz ementa\" diz quando veio). " +
+      "É publicação, não jurisprudência selecionada: não prova posição do tribunal. Zero sai como [PESQUISA INCOMPLETA], nunca \"não localizado\". " +
+      "Não grava recibo: para citar, abra o link do documento. numero + completo=true traz o texto integral das publicações do processo. " +
+      "Prazo nunca sai desta ferramenta: para intimações e prazos, use o DJEN do escritório.",
+    inputSchema: {
+      consulta: z.string().default("").describe("Frase exata, como aparece na decisão, ex.: \"aposentadoria compulsória\". Pode ser \"\" se usar numero."),
+      numero: z.string().optional().describe("Número CNJ completo, com ou sem pontuação."),
+      grau: z.enum(["1", "2", "recursal"]).optional().describe("Filtro local da página: '1' (Varas/Juizados), '2' (gabinetes do TRF1), 'recursal' (Turmas Recursais)."),
+      so_sentencas: z.boolean().optional().describe("Filtro local da página: só documentos do tipo Sentença."),
+      data_inicio: z.string().optional().describe("Data de publicação no DJEN, AAAA-MM-DD ou DD/MM/AAAA. Padrão: 180 dias atrás (com numero, sem limite)."),
+      data_fim: z.string().optional().describe("AAAA-MM-DD ou DD/MM/AAAA. Padrão: hoje."),
+      pagina: z.number().int().optional().describe("Padrão 1 (100 publicações por página, antes do filtro local)."),
+      completo: z.boolean().optional().describe("Só com numero: traz o texto integral, até o orçamento de caracteres."),
+    },
+  },
+  async (a) => texto(await tool("buscar_djen_trf1", buscarDjen)(a))
 );
 
 server.registerTool(

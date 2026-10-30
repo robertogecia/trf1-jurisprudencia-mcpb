@@ -17,7 +17,7 @@ import { checarSemanal } from "./semana.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.8.1";
+export const VERSAO = "1.9.0";
 // v1.8.0: o repositório Python (trf1-jurisprudencia-mcp) está arquivado e não aceita issue; relato e User-Agent apontam o atual.
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcpb";
 
@@ -32,7 +32,7 @@ export const SITE_TRF1 = "https://antiga-jurisprudencia.cjf.jus.br";
 // atualizados. Por isso, na fonte TRF1, zero nunca significa "não existe": a resposta sai como PESQUISA INCOMPLETA.
 export const ACERVO_TRF1_FIM = "29/02/2024";
 export const AVISO_ACERVO_TRF1 = `a versão antiga do portal do CJF, única acessível a esta extensão, só tem acórdãos do TRF1 (2º grau) julgados até ${ACERVO_TRF1_FIM}. ` +
-  "Decisão posterior NÃO aparece aqui e a ausência não é \"não localizado\". Para o período seguinte, pesquise em jurisprudencia.cjf.jus.br no navegador";
+  "Decisão posterior NÃO aparece aqui e a ausência não é \"não localizado\". Para o período seguinte, use buscar_djen_trf1 (publicações desde meados de 2025) ou pesquise em jurisprudencia.cjf.jus.br no navegador";
 export function depoisDoAcervoTrf1(dataBr) {
   const inv = (d) => String(d || "").split("/").reverse().join("");
   return inv(dataBr) > inv(ACERVO_TRF1_FIM);
@@ -2900,6 +2900,124 @@ export async function consultarTnu(consulta, tipos, pagina, porPagina, avancados
   const dados = { total, docs, avisos };
   cacheGravar(chave, dados);
   return dados;
+}
+
+// ----------------------------------------------------- DJEN: publicações da 1ª Região (v1.9.0) ---
+// API pública do CNJ (comunicaapi.pje.jus.br): sem login nem captcha, robots.txt sem restrição, 20 req/min.
+// Traz sentenças de Vara e, de meados de 2025 em diante, acórdãos do TRF1 publicados como intimação. Medido em
+// 30/10/2026: `texto` é FRASE em ordem (invertida, 236 viram 2), `count` para em 10.000, `tipoDocumento` é ignorado
+// (o filtro é local). Não grava recibo: o texto traz nomes de partes e advogados, e publicação não é jurisprudência selecionada.
+export const DJEN_API = "https://comunicaapi.pje.jus.br/api/v1/comunicacao";
+export const DJEN_INICIO_UTIL = "01/06/2025";
+const DJEN_POR_PAGINA = 100;
+const DJEN_MOSTRAR = 20;
+const DJEN_TRECHO = 600;
+const DJEN_CONTAGEM_MAX = 10_000;
+const DJEN_DIAS_PADRAO = 180;
+export const DJEN_GRAUS = { 1: "1º grau", 2: "TRF1 (2º grau)", recursal: "Turma Recursal" };
+
+export function grauDoOrgao(orgao) {
+  const o = String(orgao || "");
+  if (/Recursal|Relatoria/i.test(o)) return "recursal";
+  if (/^Gab\b|Desembargador|Vice-?Presid|Presid[êe]ncia|\bSe[çc][ãa]o\b|\bTurma\b|Corte Especial/i.test(o)) return "2";
+  if (/Vara|Juizado|\bJEF\b|SSJ|Subse[çc][ãa]o/i.test(o)) return "1";
+  return "";
+}
+
+export function publicacaoDoItem(x) {
+  const texto = textoDocumento(String(x.texto || ""));
+  const d = {
+    id: String(x.id ?? ""), data: String(x.datadisponibilizacao || x.data_disponibilizacao || ""), orgao: limpar(x.nomeOrgao || ""),
+    tipo: limpar(x.tipoDocumento || ""), classe: limpar(x.nomeClasse || ""),
+    numero: x.numeroprocessocommascara || cnj(x.numero_processo || ""), link: String(x.link || ""), texto,
+  };
+  d.grau = grauDoOrgao(d.orgao);
+  d.sentenca = /^Senten[çc]a/i.test(d.tipo);
+  d.com_ementa = /\bEMENTA\b/i.test(texto);
+  return d;
+}
+
+function trechoDaFrase(texto, frase, largura = DJEN_TRECHO) {
+  const i = frase ? texto.toLowerCase().indexOf(frase.toLowerCase()) : -1;
+  const ini = i > 200 ? i - 200 : 0;
+  const t = texto.slice(ini, ini + largura).replace(/\s+/g, " ").trim();
+  return (ini ? "…" : "") + t + (ini + largura < texto.length ? "…" : "");
+}
+
+export function hojeIso(agora = new Date()) { return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`; }
+const brParaIso = (d) => d.split("/").reverse().join("-");
+
+export function filtroDjen(docs, grau, soSentencas) {
+  return docs.filter((d) => (!grau || d.grau === grau) && (!soSentencas || d.sentenca));
+}
+
+const AVISO_DJEN = "Publicação oficial do DJEN, não jurisprudência selecionada: traz só o que saiu como intimação, e nem todo acórdão vem inteiro. " +
+  "Abra o link e confira antes de citar. Esta busca não grava recibo";
+
+export async function buscarDjen(a = {}, fetchImpl = fetch, env = process.env) {
+  try {
+    validarTamanho("consulta", a.consulta);
+    const frase = String(a.consulta || "").replace(/["“”]/g, " ").replace(/\s+/g, " ").trim();
+    const dig = soDigitos(a.numero || "");
+    if (a.numero && dig.length !== 20) throw new ErroDeParametro("numero: informe o CNJ completo (20 dígitos, com ou sem pontuação)");
+    if (!frase && !dig) throw new ErroDeParametro("informe `consulta` (frase) ou `numero`");
+    if (/(^|\s)(E|OU|NAO|NÃO|ADJ\d*|PROX\d*|COM|MESMO)(\s|$)|[*$]|\[[A-Za-z-]{2,4}\]/.test(frase)) {
+      throw new ErroDeParametro("o DJEN busca a FRASE exata, na ordem digitada: não aceita operadores, truncamento nem campos (daria zero falso). Use uma expressão como aparece na decisão e faça uma busca por expressão");
+    }
+    const grau = a.grau == null || a.grau === "" ? "" : String(a.grau).trim().toLowerCase();
+    if (grau && !(grau in DJEN_GRAUS)) throw new ErroDeParametro(`grau inválido: ${JSON.stringify(a.grau)}; use "1", "2" ou "recursal"`);
+    const pagina = Math.max(1, Number(a.pagina || 1));
+    let fim = a.data_fim ? brParaIso(normalizarData(String(a.data_fim), "data_fim")) : hojeIso();
+    let ini = a.data_inicio ? brParaIso(normalizarData(String(a.data_inicio), "data_inicio")) : "";
+    if (!ini && !dig) ini = hojeIso(new Date(Date.now() - DJEN_DIAS_PADRAO * 86_400_000));
+    if (ini && ini > fim) throw new ErroDeParametro(`data_inicio (${ini}) depois de data_fim (${fim})`);
+    const q = new URLSearchParams({ siglaTribunal: "TRF1", itensPorPagina: String(DJEN_POR_PAGINA), pagina: String(pagina) });
+    if (frase) q.set("texto", frase);
+    if (dig) q.set("numeroProcesso", dig);
+    if (ini) q.set("dataDisponibilizacaoInicio", ini);
+    if (!dig || a.data_fim) q.set("dataDisponibilizacaoFim", fim);
+    const bruto = await requisitar(new CookieJar(), "GET", `${DJEN_API}?${q}`, "djen", { esperado: "qualquer" }, fetchImpl, env);
+    let j;
+    try { j = JSON.parse(bruto); } catch { throw new PesquisaNaoRealizada("a API do DJEN não devolveu JSON — pode estar fora do ar"); }
+    if (!Array.isArray(j.items)) throw new PesquisaNaoRealizada(`a API do DJEN respondeu sem a lista de publicações (${String(j.message || "sem mensagem").slice(0, 120)})`);
+    const todos = j.items.map(publicacaoDoItem);
+    const docs = filtroDjen(todos, grau, Boolean(a.so_sentencas));
+    const total = Number(j.count || 0);
+    const cobre = ini ? ` de ${ini} a ${fim}` : "";
+    const limiteCobertura = ini && ini < brParaIso(DJEN_INICIO_UTIL)
+      ? `\n⚠️ Antes de ${DJEN_INICIO_UTIL} o TRF1 quase não publicava no DJEN (medido em 30/10/2026): pouco resultado nesse período não indica ausência.` : "";
+    if (!total) {
+      return `[PESQUISA INCOMPLETA — zero publicação no DJEN para ${frase ? `a frase "${frase}"` : `o número ${cnj(dig)}`}${cobre}]\n` +
+        "Isto NÃO é \"não localizado\": o DJEN só tem o que saiu como intimação, e a busca é por frase exata, na ordem digitada. Tente outra expressão ou outro período." + limiteCobertura + linhaDeRitmo();
+    }
+    const rotuloTotal = total >= DJEN_CONTAGEM_MAX ? `${DJEN_CONTAGEM_MAX} ou mais` : String(total);
+    const filtros = [grau ? DJEN_GRAUS[grau] : "", a.so_sentencas ? "só sentenças" : ""].filter(Boolean).join(", ");
+    const linhas = [`**${rotuloTotal} publicação(ões)** no DJEN (TRF1) para ${frase ? `\`${frase}\`` : cnj(dig)}${cobre} · página ${pagina}` +
+      (filtros ? ` · filtro local (${filtros}): ${docs.length} de ${todos.length} desta página` : ""), `⚠️ ${AVISO_DJEN}.${limiteCobertura}`, ""];
+    const completo = Boolean(a.completo) && Boolean(dig);
+    let orcamento = ORCAMENTO_DECISAO;
+    docs.slice(0, DJEN_MOSTRAR).forEach((d, k) => {
+      linhas.push(`**${k + 1}. ${d.tipo || "Publicação"} — ${d.numero}** · ${d.classe || "classe não informada"}`);
+      linhas.push(`  ${d.orgao} (${DJEN_GRAUS[d.grau] || "grau não identificado"}) · Publicado no DJEN em ${d.data}${d.com_ementa ? " · traz ementa" : ""}`);
+      if (d.link) linhas.push(`  Documento: ${d.link}`);
+      if (completo) {
+        const t = d.texto.slice(0, Math.max(0, orcamento));
+        orcamento -= t.length;
+        linhas.push(`  Texto${t.length < d.texto.length ? " (cortado pelo orçamento)" : ""}: ${t}`);
+      } else {
+        linhas.push(`  Trecho: ${trechoDaFrase(d.texto, frase)}`);
+      }
+      linhas.push("");
+    });
+    if (docs.length > DJEN_MOSTRAR) linhas.push(`Mostrando ${DJEN_MOSTRAR} de ${docs.length} desta página.`);
+    if (!docs.length) linhas.push(`Nenhuma das ${todos.length} publicações desta página passou no filtro local; isso não significa que não haja outras nas próximas páginas.`);
+    if (pagina * DJEN_POR_PAGINA < total) linhas.push(`Próxima página: pagina=${pagina + 1} (mesmos parâmetros).`);
+    return linhas.join("\n") + linhaDeRitmo();
+  } catch (e) {
+    if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(e.message);
+    if (e instanceof ErroDeParametro) return erroDeParametro(e);
+    return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
+  }
 }
 
 // ------------------------------------------------------------------- funções de tool ---
