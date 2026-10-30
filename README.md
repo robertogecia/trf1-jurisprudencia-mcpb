@@ -141,6 +141,7 @@ O que você recebe de volta:
 | Dei dois cliques no `.mcpb` e **não abriu nada** | Use o caminho alternativo do Passo 2: Claude Desktop → Configurações → Extensões, e arraste o arquivo para essa janela. |
 | Instalei, mas o Claude diz que **não tem essa ferramenta** | Abra uma **conversa nova**. Confira também se a extensão aparece **ativada** em Configurações → Extensões. |
 | A resposta veio como `[PESQUISA NÃO REALIZADA — …]` | Não é "não localizado" — é "não perguntei". A própria mensagem diz o motivo (ritmo, bloqueio, rede) e quando tentar de novo; peça ao Claude "rode o diagnóstico do TRF1". |
+| Até a v1.7.5, toda busca falhava desde 28/10/2026 com "o portal respondeu algo inesperado" | O CJF lançou um portal novo e passou a pedir **captcha** no endereço que a extensão usava. Atualize para a **v1.8.0**: o TRF1 passa a ser pesquisado na versão antiga que o próprio CJF mantém publicada, e a TNU no portal próprio da TNU. Se o captcha aparecer também lá, a busca sai como `[PESQUISA NÃO REALIZADA]`: a extensão não contorna captcha. Pesquise no site pelo navegador e traga o número para conferir. |
 | Erro de rede em toda busca, mas o portal abre no navegador | Veja se há [versão nova](https://github.com/robertogecia/trf1-jurisprudencia-mcpb/releases/latest) (a própria mensagem de erro avisa quando há) e, se não houver, [relate o problema](../../issues). |
 | Não tenho o Claude Desktop, só uso pelo site ou pelo celular | A pesquisa **não funciona** nesses casos — precisa do programa instalado no computador. |
 | Nenhuma linha acima resolveu | Peça ajuda a alguém do escritório com mais prática em informática mostrando esta tabela — ou [abra uma issue](../../issues) descrevendo o que aconteceu (sem número de processo: a página é pública). |
@@ -234,6 +235,20 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
 
 ## Notas de implementação
 
+- **Fontes (v1.8.0, 29/10/2026).** Em 28/10/2026 o CJF lançou um portal novo em `jurisprudencia.cjf.jus.br`
+  e pôs captcha (F5, "Verificação de Segurança") no caminho antigo desse host. A extensão agora usa:
+  - **TRF1 e Colegiado:** `antiga-jurisprudencia.cjf.jus.br`, a mesma aplicação JSF de antes, publicada
+    pelo próprio CJF como "versão antiga do sistema" no portal novo, sem captcha.
+  - **TNU:** `eproctnu-jur.cjf.jus.br`, o portal de jurisprudência próprio da TNU (eproc). É um formulário
+    HTTP comum, com uma requisição por busca. A consulta é traduzida antes de sair, porque um operador
+    que esse motor não conhece não dá erro, dá "0 documentos": `ADJn`/`PROXn` viram `prox`, `NAO`
+    vira `não`, `COM`/`MESMO` viram `E` e `$` vira `*`. `termo[CAMPO]` e `XOU` são erro de parâmetro.
+    Há filtros de relator, classe, número e datas, e `tipo_acordao=RELEVANTE`. Representativo de
+    Controvérsia não existe nesse portal: o caminho é o BNP.
+  - **A API do portal novo não é usada:** o `robots.txt` dele proíbe `/api/`.
+  - **Captcha nunca se contorna:** nem navegador automatizado, nem cookie copiado do navegador, nem
+    captcha repassado ao usuário. Se aparecer, a resposta é `[PESQUISA NÃO REALIZADA]` e o TRF1/Colegiado
+    não é tentado de novo por 30 minutos. Isso não pausa o disjuntor, que é compartilhado com a TNU.
 - **Decodificação de charset.** `Response.text()` do WHATWG fetch decodifica sempre como UTF-8,
   ignorando o charset do `Content-Type` — o eproc da TNU declara `ISO-8859-1`. Corrigido lendo o
   corpo como bytes e decodificando pelo charset declarado no cabeçalho (com fallback para UTF-8).

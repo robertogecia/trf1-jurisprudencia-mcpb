@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="pt-br" >
+<head >
+<link rel="shortcut icon" href="/imagens/icons/favicons/favicon.ico" /><meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no"><input id="url_log_erro_javascript" name="url_log_erro_javascript" type="hidden" value="controlador_ajax.php?acao_ajax=log_erro_javascript&acao_origem=jurisprudencia%40jurisprudencia%2Flistar_resultados" />
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"/>
+<meta name="robots" content="noindex"/>
+<title>:: eproc - Jurisprudência ::</title>
+<link rel="stylesheet" href="css/dist/bundle-bs4.a594fe79eaab1023.css">
+<link rel="stylesheet" href="css/dist/bundle-bs4-contrast.cf8d3e284f7b4663.css">
+<link rel="stylesheet" href="css/dist/bundle-global.b2da91f9a97c86b5.css">
+<link rel="stylesheet" href="css/dist/bundle-infra.b1dcf984a74eb49f.css">
+<link rel="stylesheet" href="css/dist/bundle-infra-contrast.e683f7ced054fdb1.css">
+<link href="infra_js/multiple-select/multiple-select.css?9.23.5-3.0.8" rel="stylesheet" type="text/css" media="all" />
+<link href="modulos/jurisprudencia/css/jurisprudencia.css?9.23.5-3.0.8" rel="stylesheet" type="text/css" media="all"/>
+<script>var INFRA_PATH_CSS = "infra_css",
+    INFRA_PATH_IMAGENS = "infra_css\/imagens",
+    INFRA_PATH_JS = "infra_js",
+    INFRA_PATH_SVG = "infra_css\/svg",
+    INFRA_LUPA_TIPO_JANELA = 1,
+    INFRA_BARRA_TIPO_JANELA = 1,
+    INFRA_TIPO_ALERTA = 1,
+    ENV = "prod",
+    LOGAR_ERROS_JS = false;</script>				<!-- src file: web/js/src/shared--><script type="text/javascript" charset="utf-8" src="js/dist/runtime.3a058a1015cc859a.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.jquery-ui.96a07c1ff0b79f1d.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.jquery.e5ac2ef36437060a.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.js-cookie.33bcf16f12c6997d.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.jquery-contextmenu.397eb2f1c1fc6092.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.expose-loader.4bc8640858f04c8a.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/shared.5b46edea5c1f69a7.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/3460.1543a1916adf529c.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/websocket.523181ec47a32987.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.lodash.44dd686bca961aed.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.trf4.cf18bc88b3292f46.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.unorm.55391aaeecff6d5f.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.imask.402ac4101cdeefcc.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.hotwired.9205456ee76af0d6.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.lodash.debounce.672bc626be69cd98.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.core-js.781f52be32242dcd.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.bootstrap-fileinput.d681e3ee21618d95.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.local-storage-fallback.e307a36c0b016118.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.moment.52cf4c0112a64d0b.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.bootstrap-select.7924c35426dd53b7.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.yaireo.de6215c4ed98142a.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.axios.477d70a1b2d6093f.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.tempusdominus-bootstrap-4.107ad63fee6a0512.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.regenerator-runtime.20d3f791d6e76e60.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.popper.js.09c2f255433b33b8.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.lodash.throttle.d55f567dbad6a7e9.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.jstree.a5a858af88e8ebb7.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.cookie.c7718c478b4b8629.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.bs-custom-file-input.c707992f9fc149bf.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.bootstrap.69c1fcfabf05baf7.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.abortcontroller-polyfill.8c864419680b96cc.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/991.3f43d5f5bd25cf8b.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/9364.c3d075a71f8ab666.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/8137.67682088f5c4539f.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/6055.4b67e5e53d39904f.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/main.05d984789d83d49a.js"></script>
+
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraUtil.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraCookie.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraUpload.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraMenu.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraBotaoMenu.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraAcaoMenu.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraTabelaDinamica.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraLupas.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraSelectEditavel.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraAjax.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraTooltip.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/InfraPagina.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/calendario/v1/InfraCalendario.js?9.23.5-3.0.8"></script>
+				<script type="text/javascript" charset="iso-8859-1" src="infra_js/arvore/InfraArvore.js?9.23.5-3.0.8"></script>
+                <script type="text/javascript" charset="utf-8" src="js/exibir-aviso.js?9.23.5-3.0.8"></script><script type="text/javascript" charset="iso-8859-1" src="infra_js/infra_pagina_renderer/bs4/main.js?9.23.5-3.0.8"></script><script type="text/javascript" charset="iso-8859-1" src="modulos/jurisprudencia/js/jurisprudencia.js?9.23.5-3.0.8"></script>
+</head>
+<body class="bootstrap-styles instancia-2g" onload="infraProcessarMouseDown();" class=&quot;bg-light&quot;>
+
+    
+
+    <div id="divInfraAreaGlobal">
+        
+        
+                    <div>
+        
+                            <div id='page-content-wrapper' role="main" class="p-3 bootstrap-styles">
+                <div id='divInfraAreaTela' class='infraAreaTela mt-2'>
+                    <div id='divInfraAreaTelaD' class="container-fluid">
+                                                    <div class='bootstrap-styles' id='divInfraBarraLocalizacao'>
+				<div class='pl-0 pr-0 pt-1 col-md-12 justify-content-between d-flex'>
+					<h1>Jurisprudência</h1>
+				</div>
+			</div>
+                                                                        <script>
+                            $(document).ready(function () {
+                                $('#menu-btn').on('click', function () {
+                                    var isExpanded = $(this).attr('aria-expanded') === 'true';
+                                    $(this).attr('aria-expanded', !isExpanded);
+
+                                    $('#sidebar-wrapper').attr('aria-expanded', !isExpanded);
+                                });
+                            });
+                        </script>
+                        
+
+<nav class="fixed-nav-bar">
+    <div>
+                    <img class="logoJurisprudencia"
+                 src="modulos/jurisprudencia/imagens/brasao_jf4r.png"
+                 alt="">
+                <span class="mb-0 tituloOrgao">Turma Nacional de Uniformização</span>
+    </div>
+    <div>
+                    <a href="modulos/jurisprudencia/ajuda/doc/Manual_Jurisprudência.pdf" download="tutorial_jurisprudencia.pdf"  class="text-dark" title="Baixar tutorial em PDF">
+                <i class="material-icons pr-0 icon-aligned-sm" style="font-size: 1.3rem">help_outline</i>
+                <span style="font-size: 1rem">Ajuda</span>
+            </a>
+            </div>
+</nav>
+<form id="frmJurisprudenciaResultado" class="mt-5 pt-2" method="post" action="externo_controlador.php?acao=jurisprudencia@jurisprudencia/listar_resultados">
+        <div class="img-logo-sm mb-2">
+        <img title="Página inicial" style="cursor: pointer" onclick="location.href='externo_controlador.php?acao=jurisprudencia@jurisprudencia/pesquisar'" src="modulos/jurisprudencia/imagens/jurisprudencia.png" alt="" class="img-fluid">
+    </div>
+    <div id="wrapper-jurisprudencia" class="d-flex" style="height: calc(100vh - 134px)">
+        <div class="filtros-backdrop"></div>
+        <div class="pr-2 bg-light" id="divBarraLateral" style="height: 100%">
+            <div class="text-right">
+                <a href="#/" id="btn-fechar-modal-filtros" class="d-none"><i class="material-icons">close</i></a>
+            </div>
+            <div id="divPesquisa" class="card px-3 py-2 mt-2 mb-3">
+                <h3 class="text-primary mt-2">Termo de busca</h3>
+                <div class="">
+                    
+
+
+
+
+    <div id="divFiltros" class="mt-2">
+        <div class="pl-2">
+            <div class="">
+                <div class="d-flex align-items-start pb-1"
+                     style="min-height: 35px;">
+                    <button class="btn btn-link "
+                            id="btnOperadores" type="button"
+                            style=""
+                            title="Visualizar operadores que podem ser usados no texto informado para melhorar o resultado da pesquisa"
+                            data-toggle="tooltip"
+                            data-placement="bottom"
+                    >
+                        <small class="font-italic">Operadores
+                            <i id="iconOperadoresMaximizado" class="material-icons justify-content-between iconeComTexto" style="display:none;">arrow_left</i>
+                            <i id="iconOperadoresMinimizado" class="material-icons justify-content-between iconeComTexto">arrow_right</i>
+                        </small>
+                    </button>
+                    <div id="divOperadores" class="ml-2 "
+                         style="display: none;">
+                        <button class="px-2 btn btn-sm btn-secondary" data-html="true" data-placement="bottom" data-toggle="tooltip" data-trigger="hover" onclick="adicionarOperador(' &quot; &quot;');" title="Pesquisa documentos que contenham a expressão informada.<br>Ex.: &quot;faixa de fronteira&quot;" type="button">"..."</button>
+
+                        <button class="px-2 btn btn-sm btn-secondary" data-html="true" data-placement="bottom" data-toggle="tooltip" data-trigger="hover" onclick="adicionarOperador(' e ');" title="Pesquisa documentos que contenham todas as palavras ou expressões informadas.<br>Ex.: crime e &quot;faixa de fronteira&quot;" type="button">e</button>
+
+                        <button class="px-2 btn btn-sm btn-secondary" data-html="true" data-placement="bottom" data-toggle="tooltip" data-trigger="hover" onclick="adicionarOperador(' ou ');" title="Pesquisa documentos que contenham pelo menos uma das palavras ou expressões informadas.<br>Ex.: drogas ou entorpecentes" type="button">ou</button>
+
+                        <button class="px-2 btn btn-sm btn-secondary" data-html="true" data-placement="bottom" data-toggle="tooltip" data-trigger="hover" onclick="adicionarOperador(' não ');" title="Pesquisa documentos que contenham a primeira palavra ou expressão informada mas que não contenham a segunda palavra ou expressão informada.<br>Ex.: crime não &quot;sonegação fiscal&quot;" type="button">não</button>
+
+                        <button class="px-2 btn btn-sm btn-secondary" data-html="true" data-placement="bottom" data-toggle="tooltip" data-trigger="hover" onclick="adicionarOperador(' prox ');" title="Pesquisa documentos onde as palavras ou expressões informadas encontram-se próximas no texto.<br>Ex.: aposentadoria prox contribuição" type="button">prox</button>
+
+                        <button class="px-2 btn btn-sm btn-secondary" data-html="true" data-placement="bottom" data-toggle="tooltip" data-trigger="hover" onclick="adicionarOperador(' &quot; *&quot;');" title="Pesquisa documentos que contenham o início da palavra ou expressão informada.<br>Ex.: &quot;embarg*&quot; (retornará registros com as palavras embargo, embargou, embargante)" type="button">*</button>
+
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex "
+                 style="">
+                <input type="text"
+                       id="txtPesquisa" name="txtPesquisa"
+                       class="form-control campoPesquisa"
+                       value=""
+                       placeholder="Informe o texto para pesquisa"
+                       aria-label="Texto para pesquisa"
+                       aria-describedby="btnConsultar"
+                       style="">
+                            </div>
+        </div>
+        <div class="d-flex justify-content-center mt-2">
+            <a href="#/" id="btnPesquisaAvancada"
+               class="collapsed "
+               data-toggle="collapse" data-target="#divPesquisaAvancada"
+               title="Visualizar outros filtros que podem ser usados para melhorar o resultado da pesquisa"
+               style="">
+                Pesquisa avançada
+                <i id="iconPesquisaAvancadaMinimizado" class="material-icons justify-content-between iconeComTexto">arrow_drop_down</i>
+            </a>
+            <input id="hdnExibirPesquisaAvancada" name="hdnExibirPesquisaAvancada" type="hidden" />
+
+            <input id="hdnUrlCarregarListasCombobox" name="hdnUrlCarregarListasCombobox" type="hidden" value="externo_controlador.php?acao=jurisprudencia@jurisprudencia/ajax_carregar_listas_pesquisa" />
+
+        </div>
+        <div id="divPesquisaAvancada" class="collapse">
+            <div class="">
+                <h3 class="text-primary">Base</h3>
+                <div id="filtroBase" class="pl-2">
+                    <div class="row mt-2">
+                        <div class="col-6">
+                                                        <div class="form-group"><label class="d-flex" for="selOrigem">Origem</label>
+<span class="uic-input-wrapper"><select class="w-100" data-actions-box="true" data-selected-text-format="values" disabled="disabled" id="selOrigem" multiple="true" name="selOrigem[]"><option selected="selected" value="1">TNU</option>
+</select>
+</span>
+</div>
+<script>UI.PHPHelper.select.init('selOrigem', "");</script>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-group"><label class="d-flex" for="selTipoDocumento">                <span class="d-flex">Tipo Documento</span>
+                <span id='selTipoDocumento-spinner' style="display:none;">
+                    <div class="d-flex text-primary ml-2 badge badge-light align-content-center badge-pill">
+                        <span class="mr-2">Carregando...</span>
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </span></label>
+<span class="uic-input-wrapper"><select class="w-100" data-actions-box="true" data-selected-text-format="values" id="selTipoDocumento" multiple="true" name="selTipoDocumento[]"><option value="1">Acórdão</option>
+<option value="2">Decisão monocrática</option>
+<option value="3">Decisão do Presidente</option>
+</select>
+</span>
+<div class="dependency-feedback-message danger" id="selTipoDocumento-feedbackMessage"></div>
+</div>
+            <script>
+
+            (function(){
+                var origem = document.getElementById("selOrigem");
+
+                UI.PHPHelper.select.addDependency(
+                    'origem',
+                    "selOrigem",
+                    "selTipoDocumento-spinner",
+                    "selTipoDocumento",
+                    {
+    "method": "post",
+    "url": "externo_controlador.php?acao=jurisprudencia@jurisprudencia\/ajax_listar_tipo_documento",
+    "paramsFn": function() {
+        return {
+            "origem": getOrigemSelecionada()
+        };
+    },
+    "labelFormatFn": function(k, v) {
+        return v.descricao;
+    },
+    "valueFormatFn": function(k, v) {
+        return v.id;
+    },
+    "dataAttributesMap": {}
+},
+                    null,
+                    "Selecione uma Origem",
+                    false
+                );
+            })();
+            </script><script>UI.PHPHelper.select.init('selTipoDocumento', "");</script>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="custom-control custom-checkbox mb-0 form-group"><input class="custom-control-input" id="chkPrecedenteRelevante" name="chkPrecedenteRelevante" type="checkbox" />
+<label class="custom-control-label" for="chkPrecedenteRelevante">Somente jurisprudência selecionada (Precedentes relevantes)</label>
+</div>
+
+                        </div>
+                        <div class="col-12">
+                            <div class="custom-control custom-checkbox  form-group"><input class="custom-control-input" id="chkAgruparResultados" name="chkAgruparResultados" type="checkbox" />
+<label class="custom-control-label" for="chkAgruparResultados">Agrupar Resultados</label>
+</div>
+
+                        </div>
+                    </div>
+                    <div class="row mt-2 col-12">
+                        <div class="d-flex align-items-center">
+                            <div class="form-group"><span class="d-flex">Pesquisar em</span>
+<span class="uic-input-wrapper"><div class="d-xl-inline custom-control custom-radio"><input checked="checked" class="custom-control-input" id="optInteiroTeor" name="rdoCampo" type="radio" value="I" />
+<label class="custom-control-label" for="optInteiroTeor">Inteiro teor</label>
+</div>
+<div class="d-xl-inline custom-control custom-radio"><input class="custom-control-input" id="optEmenta" name="rdoCampo" type="radio" value="E" />
+<label class="custom-control-label" for="optEmenta">Ementa</label>
+</div>
+</span>
+</div>
+
+                            <div class="custom-control custom-checkbox d-none chkCaput d-xl-inline mt-4 form-group"><input class="custom-control-input" id="chkCaput" name="chkCaput" type="checkbox" />
+<label class="custom-control-label" for="chkCaput">Somente Caput da Ementa</label>
+</div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-2">
+                <h3 class="text-primary">Campos específicos</h3>
+                <div id="filtroEspecifica" class="mt-2 pl-2">
+                    <div class="row mt-2">
+                        <div class="col-12">
+                            <div class="form-group mb-2"><label class="d-flex" for="txtProcesso">Processo</label>
+<span class="uic-input-wrapper"><input class="w-100 campoPesquisa form-control form-control-sm" id="txtProcesso" name="txtProcesso" placeholder="Número do processo" type="text" value="0011441-43.2015.4.03.6301" />
+</span>
+</div>
+
+                        </div>
+                        <div class="col-12">
+                            <div class="form-group"><label class="d-flex" for="selClasse">Classe processual</label>
+<span class="uic-input-wrapper"><select class="menu-adjust w-100" data-actions-box="true" data-live-search="true" data-live-search-normalize="true" data-selected-text-format="count > 3" data-size="5" id="selClasse" multiple="true" name="selClasse[]"><option value="Mandado de Segurança">MANDADO DE SEGURANÇA</option>
+<option value="Pedido de Uniformização de Interpretação de Lei (Presidência)">PEDIDO DE UNIFORMIZAÇÃO DE INTERPRETAÇÃO DE LEI (PRESIDÊNCIA)</option>
+<option value="Pedido de Uniformização de Interpretação de Lei (Turma)">PEDIDO DE UNIFORMIZAÇÃO DE INTERPRETAÇÃO DE LEI (TURMA)</option>
+<option value="Reclamação">RECLAMAÇÃO</option>
+</select>
+</span>
+</div>
+<script>UI.PHPHelper.select.init('selClasse', "");</script>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-12">
+                            <div class="form-group w-100 uic-date"><label class="d-flex" for="dtDecisaoInicio">Data da decisão / julgamento</label>
+<span class="uic-input-wrapper"><div aria-label="Data da decisão / julgamento" class="d-flex" role="group">            <div class='input-group input-group-sm datepicker'>
+                <input aria-label="Data Inicial" class="form-control datetimepicker-input" data-target="#dtDecisaoInicio" id="dtDecisaoInicio" name="dtDecisaoInicio" placeholder="__/__/____" type="text" />
+
+                <div class="input-group-append" data-target="#dtDecisaoInicio" data-toggle="datetimepicker">
+                
+                    <span class="input-group-text" id="inputGroup-sizing-sm">
+                        <i aria-hidden="true" class="material-icons m-0">date_range</i>
+                    </span>
+                </div>
+                
+            </div>            <div class='input-group input-group-sm datepicker'>
+                <input aria-label="Data Final" class="form-control datetimepicker-input" data-target="#dtDecisaoFim" id="dtDecisaoFim" name="dtDecisaoFim" placeholder="__/__/____" type="text" />
+
+                <div class="input-group-append" data-target="#dtDecisaoFim" data-toggle="datetimepicker">
+                
+                    <span class="input-group-text" id="inputGroup-sizing-sm">
+                        <i aria-hidden="true" class="material-icons m-0">date_range</i>
+                    </span>
+                </div>
+                
+            </div></div>
+</span>
+</div>
+
+<script>
+    UI.PHPHelper.dateInterval.init('dtDecisaoInicio', 'dtDecisaoFim', false, []);
+</script>
+                            <input id="hdnDecisaoInicio" name="hdnDecisaoInicio" type="hidden" />
+
+                            <input id="hdnDecisaoFim" name="hdnDecisaoFim" type="hidden" />
+
+                        </div>
+                        <div class="col-12">
+                            <div class="form-group w-100 uic-date"><label class="d-flex" for="dtPublicacaoInicio">Data da disponibilização / publicação</label>
+<span class="uic-input-wrapper"><div aria-label="Data da disponibilização / publicação" class="d-flex" role="group">            <div class='input-group input-group-sm datepicker'>
+                <input aria-label="Data Inicial" class="form-control datetimepicker-input" data-target="#dtPublicacaoInicio" id="dtPublicacaoInicio" name="dtPublicacaoInicio" placeholder="__/__/____" type="text" />
+
+                <div class="input-group-append" data-target="#dtPublicacaoInicio" data-toggle="datetimepicker">
+                
+                    <span class="input-group-text" id="inputGroup-sizing-sm">
+                        <i aria-hidden="true" class="material-icons m-0">date_range</i>
+                    </span>
+                </div>
+                
+            </div>            <div class='input-group input-group-sm datepicker'>
+                <input aria-label="Data Final" class="form-control datetimepicker-input" data-target="#dtPublicacaoFim" id="dtPublicacaoFim" name="dtPublicacaoFim" placeholder="__/__/____" type="text" />
+
+                <div class="input-group-append" data-target="#dtPublicacaoFim" data-toggle="datetimepicker">
+                
+                    <span class="input-group-text" id="inputGroup-sizing-sm">
+                        <i aria-hidden="true" class="material-icons m-0">date_range</i>
+                    </span>
+                </div>
+                
+            </div></div>
+</span>
+</div>
+
+<script>
+    UI.PHPHelper.dateInterval.init('dtPublicacaoInicio', 'dtPublicacaoFim', false, []);
+</script>
+                            <input id="hdnPublicacaoInicio" name="hdnPublicacaoInicio" type="hidden" />
+
+                            <input id="hdnPublicacaoFim" name="hdnPublicacaoFim" type="hidden" />
+
+                        </div>
+                    </div>
+                    <div class="row mt-1">
+                        <div class="col-12">
+                            <div class="form-group"><label class="d-flex" for="selRelator">Relator / Relatora</label>
+<span class="uic-input-wrapper"><select class="menu-adjust w-100" data-actions-box="true" data-live-search="true" data-live-search-normalize="true" data-selected-text-format="count > 3" data-size="5" id="selRelator" multiple="true" name="selRelator[]"><option value="ALESSANDRA DE MEDEIROS NOGUEIRA REIS">ALESSANDRA DE MEDEIROS NOGUEIRA REIS</option>
+<option value="ANDRE DIAS FERNANDES">ANDRE DIAS FERNANDES</option>
+<option value="ANDRÉ DIAS FERNANDES">ANDRÉ DIAS FERNANDES</option>
+<option value="ATANAIR NASSER RIBEIRO LOPES">ATANAIR NASSER RIBEIRO LOPES</option>
+<option value="BIANOR ARRUDA BEZERRA NETO">BIANOR ARRUDA BEZERRA NETO</option>
+<option value="BOAVENTURA JOAO ANDRADE">BOAVENTURA JOAO ANDRADE</option>
+<option value="CAIO MOYSES DE LIMA">CAIO MOYSES DE LIMA</option>
+<option value="CARMEN ELIZANGELA DIAS MOREIRA DE RESENDE">CARMEN ELIZANGELA DIAS MOREIRA DE RESENDE</option>
+<option value="CAROLINE MEDEIROS E SILVA">CAROLINE MEDEIROS E SILVA</option>
+<option value="DAVID WILSON DE ABREU PARDO">DAVID WILSON DE ABREU PARDO</option>
+<option value="ERIVALDO RIBEIRO DOS SANTOS">ERIVALDO RIBEIRO DOS SANTOS</option>
+<option value="FABIO CESAR DOS SANTOS OLIVEIRA">FABIO CESAR DOS SANTOS OLIVEIRA</option>
+<option value="FABIO CORDEIRO DE LIMA">FABIO CORDEIRO DE LIMA</option>
+<option value="FABIO DE SOUZA SILVA">FABIO DE SOUZA SILVA</option>
+<option value="FABIO HENRIQUE RODRIGUES DE MORAES FIORENZA">FABIO HENRIQUE RODRIGUES DE MORAES FIORENZA</option>
+<option value="FERNANDO MOREIRA GONCALVES">FERNANDO MOREIRA GONCALVES</option>
+<option value="FRANCISCO DE ASSIS BASILIO DE MORAES">FRANCISCO DE ASSIS BASILIO DE MORAES</option>
+<option value="FRANCISCO GLAUBER PESSOA ALVES">FRANCISCO GLAUBER PESSOA ALVES</option>
+<option value="FREDERICO AUGUSTO LEOPOLDINO KOEHLER">FREDERICO AUGUSTO LEOPOLDINO KOEHLER</option>
+<option value="FÁBIO SOUZA">FÁBIO SOUZA</option>
+<option value="GABRIEL BRUM TEIXEIRA">GABRIEL BRUM TEIXEIRA</option>
+<option value="GERSON LUIZ ROCHA">GERSON LUIZ ROCHA</option>
+<option value="GIOVANI BIGOLIN">GIOVANI BIGOLIN</option>
+<option value="GISELE CHAVES SAMPAIO ALCANTARA">GISELE CHAVES SAMPAIO ALCANTARA</option>
+<option value="GUILHERME BOLLORINI PEREIRA">GUILHERME BOLLORINI PEREIRA</option>
+<option value="GUSTAVO MELO BARBOSA">GUSTAVO MELO BARBOSA</option>
+<option value="ISADORA SEGALLA AFANASIEFF">ISADORA SEGALLA AFANASIEFF</option>
+<option value="IVANA MAFRA MARINHO">IVANA MAFRA MARINHO</option>
+<option value="IVANIR CESAR IRENO JUNIOR">IVANIR CESAR IRENO JUNIOR</option>
+<option value="JAIRO DA SILVA PINTO">JAIRO DA SILVA PINTO</option>
+<option value="JAIRO GILBERTO SCHAFER">JAIRO GILBERTO SCHAFER</option>
+<option value="JOAO CESAR OTONI DE MATOS">JOAO CESAR OTONI DE MATOS</option>
+<option value="JOAQUIM LUSTOSA FILHO">JOAQUIM LUSTOSA FILHO</option>
+<option value="JOSÉ FRANCISCO ANDREOTTI SPIZZIRRI">JOSÉ FRANCISCO ANDREOTTI SPIZZIRRI</option>
+<option value="JOÃO CARLOS CABRELON DE OLIVEIRA">JOÃO CARLOS CABRELON DE OLIVEIRA</option>
+<option value="JULIO GUILHERME BEREZOSKI SCHATTSCHNEIDER">JULIO GUILHERME BEREZOSKI SCHATTSCHNEIDER</option>
+<option value="LEANDRO GONSALVES FERREIRA">LEANDRO GONSALVES FERREIRA</option>
+<option value="LEONARDO AUGUSTO DE ALMEIDA AGUIAR">LEONARDO AUGUSTO DE ALMEIDA AGUIAR</option>
+<option value="LEONARDO CASTANHO MENDES">LEONARDO CASTANHO MENDES</option>
+<option value="LEONARDO JOSÉ CORRÊA GUARDA">LEONARDO JOSÉ CORRÊA GUARDA</option>
+<option value="LILIAN OLIVEIRA DA COSTA TOURINHO">LILIAN OLIVEIRA DA COSTA TOURINHO</option>
+<option value="LINO OSVALDO SERRA SOUSA SEGUNDO">LINO OSVALDO SERRA SOUSA SEGUNDO</option>
+<option value="LUCIANA ORTIZ TAVARES COSTA ZANONI">LUCIANA ORTIZ TAVARES COSTA ZANONI</option>
+<option value="LUCIANE MERLIN CLÈVE KRAVETZ">LUCIANE MERLIN CLÈVE KRAVETZ</option>
+<option value="LUIS EDUARDO BIANCHI CERQUEIRA">LUIS EDUARDO BIANCHI CERQUEIRA</option>
+<option value="LUÍSA HICKEL GAMBA">LUÍSA HICKEL GAMBA</option>
+<option value="MARIA LUCIA GOMES DE SOUZA">MARIA LUCIA GOMES DE SOUZA</option>
+<option value="MARINA VASQUES DUARTE">MARINA VASQUES DUARTE</option>
+<option value="MAURO LUIZ CAMPBELL MARQUES">MAURO LUIZ CAMPBELL MARQUES</option>
+<option value="MEI LIN LOPES WU BANDEIRA">MEI LIN LOPES WU BANDEIRA</option>
+<option value="MINISTRO MARCO AURELIO GASTALDI BUZZI">MINISTRO MARCO AURELIO GASTALDI BUZZI</option>
+<option value="MINISTRO MARCO AURÉLIO BELLIZZE">MINISTRO MARCO AURÉLIO BELLIZZE</option>
+<option value="MINISTRO PAULO DE TARSO SANSEVERINO">MINISTRO PAULO DE TARSO SANSEVERINO</option>
+<option value="MINISTRO RAUL ARAÚJO">MINISTRO RAUL ARAÚJO</option>
+<option value="MINISTRO RICARDO VILLAS BOAS CUEVA">MINISTRO RICARDO VILLAS BOAS CUEVA</option>
+<option value="MONIQUE MARCHIOLI LEITE">MONIQUE MARCHIOLI LEITE</option>
+<option value="NAGIBE DE MELO JORGE NETO">NAGIBE DE MELO JORGE NETO</option>
+<option value="NEIAN MILHOMEM CRUZ">NEIAN MILHOMEM CRUZ</option>
+<option value="ODILON ROMANO NETO">ODILON ROMANO NETO</option>
+<option value="OMAR CHAMON">OMAR CHAMON</option>
+<option value="PAULA EMILIA MOURA ARAGAO DE SOUSA BRASIL">PAULA EMILIA MOURA ARAGAO DE SOUSA BRASIL</option>
+<option value="PAULO CEZAR NEVES JUNIOR">PAULO CEZAR NEVES JUNIOR</option>
+<option value="PAULO ROBERTO PARCA DE PINHO">PAULO ROBERTO PARCA DE PINHO</option>
+<option value="POLYANA FALCAO BRITO">POLYANA FALCAO BRITO</option>
+<option value="RODRIGO RIGAMONTE FONSECA">RODRIGO RIGAMONTE FONSECA</option>
+<option value="RONALDO CASTRO DESTERRO E SILVA">RONALDO CASTRO DESTERRO E SILVA</option>
+<option value="RONALDO DESTERRO">RONALDO DESTERRO</option>
+<option value="RONALDO JOSE DA SILVA">RONALDO JOSE DA SILVA</option>
+<option value="SERGIO DE ABREU BRITO">SERGIO DE ABREU BRITO</option>
+<option value="SUSANA SBROGIO GALIA">SUSANA SBROGIO GALIA</option>
+<option value="TAIS VARGAS FERRACINI DE CAMPOS GURGEL">TAIS VARGAS FERRACINI DE CAMPOS GURGEL</option>
+<option value="TALES KRAUSS QUEIROZ">TALES KRAUSS QUEIROZ</option>
+<option value="WAGMAR ROBERTO SILVA">WAGMAR ROBERTO SILVA</option>
+<option value="WILSON JOSE WITZEL">WILSON JOSE WITZEL</option>
+</select>
+</span>
+</div>
+<script>UI.PHPHelper.select.init('selRelator', "");</script>
+                        </div>
+                                            </div>
+                </div>
+            </div>
+
+                    </div>
+
+                                <hr class="my-2">
+    
+    <div class="d-flex justify-content-between mt-2">
+                    
+    <button class="btn btn-link" type="button" id="btnLimparFiltros"
+            title="Limpa os filtros de pesquisa">
+        <small class="">
+            <i class="material-icons icon-aligned-sm" style="font-size:1.3rem">refresh</i>
+            Limpar filtros
+        </small>
+    </button>
+
+        <button style="height: 37px"
+                class="btn btn-sm btn-primary pr-3 pl-2 btnConsultar d-flex align-items-center ml-2"
+                type="submit" title="Consultar" id="btnConsultar">
+            <i class="material-icons icon-aligned">search</i>
+            <span class="d-none d-lg-block">Pesquisar</span>
+        </button>
+    </div>
+
+            </div>
+                </div>
+            </div>
+            <div id="divFiltros" class="mb-3">
+                <div class="">
+                    <h2 class="mb-0">
+                        <i class="material-icons" style="vertical-align: bottom">tune</i>
+                        Filtros
+                    </h2>
+                </div>
+
+                <div id="filtrosConteudo" class="py-2">
+                    
+
+                                                        <div id="divassunto_principal" class="accordion my-1">
+                <div class="card">
+                    <a id="linkassunto_principal" href="#/" class="linkControle p-2 d-flex justify-content-between"
+                            data-toggle="collapse"
+                            title="Visualizar filtros" data-target="#filtroassunto_principal"
+                            aria-expanded="false" aria-controls="filtroassunto_principal">
+                        <div>
+                            <i class="material-icons iconeComTexto" >filter_list</i>
+                            Assunto
+                        </div>
+                        <div>
+                            <i id="iconassunto_principalMaximizado" class="material-icons iconeComTexto float-right"
+                                    style="display:none;">arrow_drop_up</i>
+                            <i id="iconassunto_principalMinimizado" class="material-icons iconeComTexto float-right"
+                                    >arrow_drop_down</i>
+                        </div>
+                    </a>
+                                                            
+                    <div id="filtroassunto_principal" class="card-body collapse ml-1 p-2 filtro-scroll">
+                        <i class="bi bi-sort-numeric-down-alt icon-filter-sort hidden bd-highlight cursor-pointer"
+                           title="Ordenar por quantidade" id="iconeOrdenarQuantidadeassunto_principal"
+                           onclick="ordenar('assunto_principal', 'Q')">
+                        </i>
+                        <i class="bi bi-sort-alpha-down icon-filter-sort bd-highlight cursor-pointer"
+                           title="Ordenar por nome" id="iconeOrdenarAlfabeticaassunto_principal"
+                           onclick="ordenar('assunto_principal', 'A')">
+                        </i>
+                                                
+                                                                            
+                                                                            <div class="custom-control custom-checkbox mb-1 form-group"><input class="custom-control-input filtro" id="ckbFiltroassunto_principal[]_Urbana (art. 42/44)" name="ckbFiltroassunto_principal[]" type="checkbox" value="Urbana (art. 42/44)" />
+<label class="custom-control-label" for="ckbFiltroassunto_principal[]_Urbana (art. 42/44)">URBANA (ART. 42/44) (1)</label>
+</div>
+
+                        
+                                            </div>
+                </div>
+            </div>
+                                                                <div id="divclasse_processo_facet" class="accordion my-1">
+                <div class="card">
+                    <a id="linkclasse_processo_facet" href="#/" class="linkControle p-2 d-flex justify-content-between"
+                            data-toggle="collapse"
+                            title="Visualizar filtros" data-target="#filtroclasse_processo_facet"
+                            aria-expanded="false" aria-controls="filtroclasse_processo_facet">
+                        <div>
+                            <i class="material-icons iconeComTexto" >filter_list</i>
+                            Classe
+                        </div>
+                        <div>
+                            <i id="iconclasse_processo_facetMaximizado" class="material-icons iconeComTexto float-right"
+                                    style="display:none;">arrow_drop_up</i>
+                            <i id="iconclasse_processo_facetMinimizado" class="material-icons iconeComTexto float-right"
+                                    >arrow_drop_down</i>
+                        </div>
+                    </a>
+                                                            
+                    <div id="filtroclasse_processo_facet" class="card-body collapse ml-1 p-2 filtro-scroll">
+                        <i class="bi bi-sort-numeric-down-alt icon-filter-sort hidden bd-highlight cursor-pointer"
+                           title="Ordenar por quantidade" id="iconeOrdenarQuantidadeclasse_processo_facet"
+                           onclick="ordenar('classe_processo_facet', 'Q')">
+                        </i>
+                        <i class="bi bi-sort-alpha-down icon-filter-sort bd-highlight cursor-pointer"
+                           title="Ordenar por nome" id="iconeOrdenarAlfabeticaclasse_processo_facet"
+                           onclick="ordenar('classe_processo_facet', 'A')">
+                        </i>
+                                                
+                                                                            
+                                                                            <div class="custom-control custom-checkbox mb-1 form-group"><input class="custom-control-input filtro" id="ckbFiltroclasse_processo_facet[]_Pedido de Uniformização de Interpretação de Lei (Turma)" name="ckbFiltroclasse_processo_facet[]" type="checkbox" value="Pedido de Uniformização de Interpretação de Lei (Turma)" />
+<label class="custom-control-label" for="ckbFiltroclasse_processo_facet[]_Pedido de Uniformização de Interpretação de Lei (Turma)">PEDIDO DE UNIFORMIZAÇÃO DE INTERPRETAÇÃO DE LEI (TURMA) (1)</label>
+</div>
+
+                        
+                                            </div>
+                </div>
+            </div>
+                                                                <div id="divdth_decisao" class="accordion my-1">
+                <div class="card">
+                    <a id="linkdth_decisao" href="#/" class="linkControle p-2 d-flex justify-content-between"
+                            data-toggle="collapse"
+                            title="Visualizar filtros" data-target="#filtrodth_decisao"
+                            aria-expanded="false" aria-controls="filtrodth_decisao">
+                        <div>
+                            <i class="material-icons iconeComTexto" >filter_list</i>
+                            Data de julgamento
+                        </div>
+                        <div>
+                            <i id="icondth_decisaoMaximizado" class="material-icons iconeComTexto float-right"
+                                    style="display:none;">arrow_drop_up</i>
+                            <i id="icondth_decisaoMinimizado" class="material-icons iconeComTexto float-right"
+                                    >arrow_drop_down</i>
+                        </div>
+                    </a>
+                                                                                                        
+                    <div id="filtrodth_decisao" class="card-body collapse ml-1 p-2 filtro-scroll">
+                        <i class="bi bi-sort-numeric-down-alt icon-filter-sort hidden bd-highlight cursor-pointer"
+                           title="Ordenar por quantidade" id="iconeOrdenarQuantidadedth_decisao"
+                           onclick="ordenar('dth_decisao', 'Q')">
+                        </i>
+                        <i class="bi bi-sort-alpha-down-alt icon-filter-sort bd-highlight cursor-pointer"
+                           title="Ordenar por nome" id="iconeOrdenarAlfabeticadth_decisao"
+                           onclick="ordenar('dth_decisao', 'A')">
+                        </i>
+                                                
+                                                                            
+                                                                            <div class="custom-control custom-checkbox mb-1 form-group"><input class="custom-control-input filtro" id="ckbFiltrodth_decisao[]_ 2025" name="ckbFiltrodth_decisao[]" type="checkbox" value=" 2025" />
+<label class="custom-control-label" for="ckbFiltrodth_decisao[]_ 2025"> 2025 (1)</label>
+</div>
+
+                        
+                                            </div>
+                </div>
+            </div>
+                                                                <div id="divdth_disponibilizacao" class="accordion my-1">
+                <div class="card">
+                    <a id="linkdth_disponibilizacao" href="#/" class="linkControle p-2 d-flex justify-content-between"
+                            data-toggle="collapse"
+                            title="Visualizar filtros" data-target="#filtrodth_disponibilizacao"
+                            aria-expanded="false" aria-controls="filtrodth_disponibilizacao">
+                        <div>
+                            <i class="material-icons iconeComTexto" >filter_list</i>
+                            Data de publicação
+                        </div>
+                        <div>
+                            <i id="icondth_disponibilizacaoMaximizado" class="material-icons iconeComTexto float-right"
+                                    style="display:none;">arrow_drop_up</i>
+                            <i id="icondth_disponibilizacaoMinimizado" class="material-icons iconeComTexto float-right"
+                                    >arrow_drop_down</i>
+                        </div>
+                    </a>
+                                                                                                        
+                    <div id="filtrodth_disponibilizacao" class="card-body collapse ml-1 p-2 filtro-scroll">
+                        <i class="bi bi-sort-numeric-down-alt icon-filter-sort hidden bd-highlight cursor-pointer"
+                           title="Ordenar por quantidade" id="iconeOrdenarQuantidadedth_disponibilizacao"
+                           onclick="ordenar('dth_disponibilizacao', 'Q')">
+                        </i>
+                        <i class="bi bi-sort-alpha-down-alt icon-filter-sort bd-highlight cursor-pointer"
+                           title="Ordenar por nome" id="iconeOrdenarAlfabeticadth_disponibilizacao"
+                           onclick="ordenar('dth_disponibilizacao', 'A')">
+                        </i>
+                                                
+                                                                            
+                                                                            <div class="custom-control custom-checkbox mb-1 form-group"><input class="custom-control-input filtro" id="ckbFiltrodth_disponibilizacao[]_ 2025" name="ckbFiltrodth_disponibilizacao[]" type="checkbox" value=" 2025" />
+<label class="custom-control-label" for="ckbFiltrodth_disponibilizacao[]_ 2025"> 2025 (1)</label>
+</div>
+
+                        
+                                            </div>
+                </div>
+            </div>
+                                                                                    <div id="divsin_precedente_relevante" class="accordion my-1">
+                <div class="card">
+                    <a id="linksin_precedente_relevante" href="#/" class="linkControle p-2 d-flex justify-content-between"
+                            data-toggle="collapse"
+                            title="Visualizar filtros" data-target="#filtrosin_precedente_relevante"
+                            aria-expanded="false" aria-controls="filtrosin_precedente_relevante">
+                        <div>
+                            <i class="material-icons iconeComTexto" >filter_list</i>
+                            Precedente Relevante
+                        </div>
+                        <div>
+                            <i id="iconsin_precedente_relevanteMaximizado" class="material-icons iconeComTexto float-right"
+                                    style="display:none;">arrow_drop_up</i>
+                            <i id="iconsin_precedente_relevanteMinimizado" class="material-icons iconeComTexto float-right"
+                                    >arrow_drop_down</i>
+                        </div>
+                    </a>
+                                                            
+                    <div id="filtrosin_precedente_relevante" class="card-body collapse ml-1 p-2 filtro-scroll">
+                        <i class="bi bi-sort-numeric-down-alt icon-filter-sort hidden bd-highlight cursor-pointer"
+                           title="Ordenar por quantidade" id="iconeOrdenarQuantidadesin_precedente_relevante"
+                           onclick="ordenar('sin_precedente_relevante', 'Q')">
+                        </i>
+                        <i class="bi bi-sort-alpha-down icon-filter-sort bd-highlight cursor-pointer"
+                           title="Ordenar por nome" id="iconeOrdenarAlfabeticasin_precedente_relevante"
+                           onclick="ordenar('sin_precedente_relevante', 'A')">
+                        </i>
+                                                
+                                                                            
+                                                                            <div class="custom-control custom-checkbox mb-1 form-group"><input class="custom-control-input filtro" id="ckbFiltrosin_precedente_relevante[]_Não" name="ckbFiltrosin_precedente_relevante[]" type="checkbox" value="Não" />
+<label class="custom-control-label" for="ckbFiltrosin_precedente_relevante[]_Não">NÃO (1)</label>
+</div>
+
+                        
+                                            </div>
+                </div>
+            </div>
+                                                                <div id="divrelator" class="accordion my-1">
+                <div class="card">
+                    <a id="linkrelator" href="#/" class="linkControle p-2 d-flex justify-content-between"
+                            data-toggle="collapse"
+                            title="Visualizar filtros" data-target="#filtrorelator"
+                            aria-expanded="false" aria-controls="filtrorelator">
+                        <div>
+                            <i class="material-icons iconeComTexto" >filter_list</i>
+                            Relator / Magistrado
+                        </div>
+                        <div>
+                            <i id="iconrelatorMaximizado" class="material-icons iconeComTexto float-right"
+                                    style="display:none;">arrow_drop_up</i>
+                            <i id="iconrelatorMinimizado" class="material-icons iconeComTexto float-right"
+                                    >arrow_drop_down</i>
+                        </div>
+                    </a>
+                                                            
+                    <div id="filtrorelator" class="card-body collapse ml-1 p-2 filtro-scroll">
+                        <i class="bi bi-sort-numeric-down-alt icon-filter-sort hidden bd-highlight cursor-pointer"
+                           title="Ordenar por quantidade" id="iconeOrdenarQuantidaderelator"
+                           onclick="ordenar('relator', 'Q')">
+                        </i>
+                        <i class="bi bi-sort-alpha-down icon-filter-sort bd-highlight cursor-pointer"
+                           title="Ordenar por nome" id="iconeOrdenarAlfabeticarelator"
+                           onclick="ordenar('relator', 'A')">
+                        </i>
+                                                
+                                                                            
+                                                                            <div class="custom-control custom-checkbox mb-1 form-group"><input class="custom-control-input filtro" id="ckbFiltrorelator[]_FABIO DE SOUZA SILVA" name="ckbFiltrorelator[]" type="checkbox" value="FABIO DE SOUZA SILVA" />
+<label class="custom-control-label" for="ckbFiltrorelator[]_FABIO DE SOUZA SILVA">FABIO DE SOUZA SILVA (1)</label>
+</div>
+
+                        
+                                            </div>
+                </div>
+            </div>
+                                                                <div id="divsig_uf" class="accordion my-1">
+                <div class="card">
+                    <a id="linksig_uf" href="#/" class="linkControle p-2 d-flex justify-content-between"
+                            data-toggle="collapse"
+                            title="Visualizar filtros" data-target="#filtrosig_uf"
+                            aria-expanded="false" aria-controls="filtrosig_uf">
+                        <div>
+                            <i class="material-icons iconeComTexto" >filter_list</i>
+                            Unidade Federativa
+                        </div>
+                        <div>
+                            <i id="iconsig_ufMaximizado" class="material-icons iconeComTexto float-right"
+                                    style="display:none;">arrow_drop_up</i>
+                            <i id="iconsig_ufMinimizado" class="material-icons iconeComTexto float-right"
+                                    >arrow_drop_down</i>
+                        </div>
+                    </a>
+                                                            
+                    <div id="filtrosig_uf" class="card-body collapse ml-1 p-2 filtro-scroll">
+                        <i class="bi bi-sort-numeric-down-alt icon-filter-sort hidden bd-highlight cursor-pointer"
+                           title="Ordenar por quantidade" id="iconeOrdenarQuantidadesig_uf"
+                           onclick="ordenar('sig_uf', 'Q')">
+                        </i>
+                        <i class="bi bi-sort-alpha-down icon-filter-sort bd-highlight cursor-pointer"
+                           title="Ordenar por nome" id="iconeOrdenarAlfabeticasig_uf"
+                           onclick="ordenar('sig_uf', 'A')">
+                        </i>
+                                                
+                                                                            
+                                                                            <div class="custom-control custom-checkbox mb-1 form-group"><input class="custom-control-input filtro" id="ckbFiltrosig_uf[]_SP" name="ckbFiltrosig_uf[]" type="checkbox" value="SP" />
+<label class="custom-control-label" for="ckbFiltrosig_uf[]_SP">SP (1)</label>
+</div>
+
+                        
+                                            </div>
+                </div>
+            </div>
+            
+    <div id="divOrdenacao" class="mt-3">
+        <div class="form-group"><label class="mb-0 d-flex" for="selOrdenacao"><h2 class='mb-3'><i class='bi bi-sort-down mr-2'></i>Critério de ordenação</h2></label>
+<span class="uic-input-wrapper"><select class="w-100 form-control" id="selOrdenacao" name="selOrdenacao"><option value="1">mais recentes</option>
+<option value="2">mais antigos</option>
+</select>
+</span>
+</div>
+<script>UI.PHPHelper.select.init('selOrdenacao', "");</script>
+    </div>
+
+
+                </div>
+            </div>
+        </div>
+        <input id="hdnUrlPaginar" name="hdnUrlPaginar" type="hidden" value="externo_controlador.php?acao=jurisprudencia@jurisprudencia/ajax_paginar_resultado" />
+
+        <div class="" id="divResultados">
+            <div class="resultadosAguarde text-center mt-2 mb-2" style="display: none;">
+                <span class="spinner-border text-primary-new" role="status" style="width: 20px;height: 20px;"></span>
+                <div><label class="text-primary-new">Pesquisando</label></div>
+            </div>
+            <div class="resultadosConteudo">
+                
+<div class="" style="height: calc(100vh - 158px)">
+    <div class="" id="headerResultados">
+        
+
+    <div>
+                <div class="row">
+            <div class="col-auto">
+                <div class="d-flex align-items-center">
+                    <a id="btn-sidebar-filtros" class="btnExibirMenu mr-2"
+                       title="Visualizar ou ocultar critérios de pesquisa">
+                        <i class="material-icons icon-aligned iconeComTexto" style="font-size: 2rem;">manage_search</i>
+                    </a>
+                    <a id="btn-modal-filtros" class="btn-modal-filtros mr-2"
+                       title="Visualizar ou ocultar critérios de pesquisa">
+                        <i class="material-icons icon-aligned iconeComTexto" style="font-size: 2rem;">manage_search</i>
+                    </a>
+                    <h2 class="mb-0 mr-3">1 documentos encontrados</h2>
+                                            <div id="filtroSelecionados" class="mr-2" style="display: none;">
+                            <a href="#/" class="btnFiltrarSelecionados"
+                               title="Filtrar pelos resultados selecionados">
+                                <i class="material-icons iconeComTexto">filter_alt</i>
+                                <span class="d-none d-lg-inline-flex">Filtrar selecionados</span>
+                            </a>
+                        </div>
+                                            <div id="visualizarSelecionados" style="display: none;">
+                            <a href="#/" class="btnVisualizarSelecionados" onclick="visualizarSelecionados(); return false;"
+                               title="Visualizar resultados selecionados">
+                                <i class="material-icons iconeComTexto">picture_as_pdf</i>
+                                <span class="d-none d-lg-inline-flex">Visualizar selecionados</span>
+                            </a>
+                        </div>
+                </div>
+            </div>
+                            <div class="col d-flex justify-content-start justify-content-md-end align-items-center text-nowrap">
+                    <div class="mr-3">
+                                                                        
+                        <i class="material-icons iconeComTexto paginaPrimeira iconeNavegacao iconeDesativado"
+                           title="Ir para primeira página">first_page</i>
+                        <i class="material-icons iconeComTexto paginaAnterior iconeNavegacao iconeDesativado"
+                           title="Ir para página anterior">navigate_before</i>
+                        <i class="material-icons iconeComTexto paginaProxima iconeNavegacao iconeDesativado"
+                           title="Ir para próxima página">navigate_next</i>
+                        <i class="material-icons iconeComTexto paginaUltima iconeNavegacao iconeDesativado"
+                           title="Ir para última página">last_page</i>
+                    </div>
+                    <div class="d-flex align-items-center">
+                                                <div class="d-inline-flex selTamanhoPagina form-group"><label class="d-flex" for="selTamanhoPagina"></label>
+<span class="uic-input-wrapper"><select id="selTamanhoPagina" name="selTamanhoPagina"><option value="10">10</option>
+<option value="25">25</option>
+<option selected="selected" value="50">50</option>
+<option value="100">100</option>
+</select>
+</span>
+</div>
+<script>UI.PHPHelper.select.init('selTamanhoPagina', "");</script>
+                        <span for="selTamanhoPagina" class="ml-1">resultados por página</span>
+                    </div>
+                </div>
+                <input id="hdnTotalPaginas" name="hdnTotalPaginas" type="hidden" value="1" />
+
+                <input id="hdnPaginaAtual" name="hdnPaginaAtual" type="hidden" value="1" />
+
+                <input id="hdnTotalResultado" name="hdnTotalResultado" type="hidden" value="1" />
+
+                                        <input id="hdnDocsSelecionados" name="hdnDocsSelecionados" type="hidden" />
+
+                    </div>
+    </div>
+    </div>
+
+    <div class="mt-1" id="bodyResultados" style="overflow-y: auto;height: 100%">
+        
+    <input id="hdnLinkGerarPDF" name="hdnLinkGerarPDF" type="hidden" value="externo_controlador.php?acao=jurisprudencia@jurisprudencia/ajax_gerar_pdf_documento" />
+
+                        <div class="card mb-3 resultadoItem" id="resultado771749245207494946201658054330">
+            <div class="bg-header-resultado align-content-center">
+                <h4 class="mb-0 d-flex justify-content-between">
+                    <div>
+                        <div class="custom-control custom-checkbox d-inline form-group"><input class="custom-control-input chkDocumento" id="chkDocumento_771749245207494946201658054330" name="chkDocumento" type="checkbox" value="771749245207494946201658054330" />
+<label class="custom-control-label" for="chkDocumento_771749245207494946201658054330"></label>
+</div>
+
+
+                        Documento 1 de 1
+
+                        <span class="mx-4">
+                                                                            <i class="material-icons iconeComTexto resultadoProximo iconeNavegacao iconeDesativado"
+                           title="Ir para próximo documento">expand_more</i>
+                        <i class="material-icons iconeComTexto resultadoAnterior iconeNavegacao iconeDesativado"
+                           title="Ir para documento anterior">expand_less</i>
+                    </span>
+                    </div>
+                    <div>
+                        <span class="menu-actions-responsive" menu-count="xs-0 md-6">
+                                                    <a href="javascript:void(0)"
+                               class="text-dark inteiroTeor"
+                               title="Exibir inteiro teor do documento"
+                               data-link="externo_controlador.php?acao=jurisprudencia@jurisprudencia/download_inteiro_teor&id_jurisprudencia=771749245207494946201658054330">
+                                <i class="material-icons icon-aligned iconeComTexto mr-1">article</i>
+                            </a>
+                                                                                                    <a href="javascript:void(0)"
+                               class="text-dark copiarCitacao"
+                               title="Visualizar/copiar citação"
+                               data-toggle="modal"
+                               data-target="#modalCitacao"
+                               data-citacao="EMENTA:   DIREITO PREVIDENCIÁRIO. PEDIDO DE UNIFORMIZAÇÃO NACIONAL. BENEFÍCIO POR INCAPACIDADE. INCAPACIDADE PREEXISTENTE AO REINGRESSO NO RGPS. REEXAME PROBATÓRIO. IMPOSSIBILIDADE. SÚMULA 42 DA TNU. REVOGAÇÃO DE TUTELA ANTECIPADA. RESTITUIÇÃO DOS VALORES RECEBIDOS PELO SEGURADO. PUIL PARCIALMENTE CONHECIDO E NESSE PONTO IMPROVIDO.
+I. Caso em exame
+1. Pedido de Uniformização de Interpretação de Lei - PUIL contra acórdão que reformou a sentença de procedência de concessão de benefício por incapacidade ao segurado, por entender que restou comprovado nos autos que a incapacidade era preexistente ao reingresso do segurado ao RGPS. Ademais, determinou a revogação da tutela antecipada concedida pelo Juízo a quo e determinou a restituição dos respectivos valores recebidos pelo autor.
+II. Questão em discussão
+2. A questão em discussão consiste em saber se o acórdão contraria o entendimento fixado pela TNU no julgamento do Pedilef 05080888320104058102 quanto à possibilidade de concessão do benefício em questão caso, embora a doença seja preexistente, a incapacidade seja posterior ao ingresso ou reingresso do segurado no RGPS. Consiste, ainda, em definir a repetibilidade dos valores recebidos pelo segurado a título de tutela antecipada posteriormente revogada.
+III. Razões de decidir
+3. Observe-se que o acórdão recorrido não negou aplicação ao entendimento fixado pela TNU no julgamento do Pedilef 05080888320104058102, no qual se entendeu que apenas quando a incapacidade (e não a doença) é preexistente, descabe o auxílio-doença, não sendo o caso de incapacidade decorrente de agravamento de patologia já adquirida quando do (re)ingresso no sistema. Diversamente, a Turma Recursal entendeu que, no caso concreto, restou demonstrado que a própria incapacidade do autor, e não a doença, é preexistente ao seu reingresso no RGPS.
+4. Conclusão em sentido diverso demandaria reexame probatório dos autos, o que é vedado nessa instância, nos termos da Súmula 42 da TNU.
+5. Quanto à repetibilidade dos valores recebidos pelo segurado a título de tutela antecipada posteriormente revogada, restou demonstrada a divergência em relação ao paradigma apontado, devendo o recurso ser conhecido nesse ponto.
+ 6. Ocorre que, posteriormente ao julgamento apontado, o STJ definiu a seguinte tese, no julgamento do Tema repetitivo 692, a qual, inclusive, foi recentemente complementada pela reconhecer a possibilidade de devolução dos respectivos valores nos próprios autos: A reforma da decisão que antecipa os efeitos da tutela final obriga o autor da ação a devolver os valores dos benefícios previdenciários ou assistenciais recebidos, o que pode ser feito por meio de desconto em valor que não exceda 30% (trinta por cento) da importância de eventual benefício que ainda lhe estiver sendo pago, restituindo-se as partes ao estado anterior e liquidando-se eventuais prejuízos nos mesmos autos, na forma do art. 520, II, do CPC/2015 (art. 475-O, II, do CPC/73).
+7. Sendo assim, o acórdão recorrido encontra-se de acordo com o entendimento jurisprudencial mais atualizado, devendo ser mantido.
+IV. Dispositivo
+8. Pedido de Uniformização parcialmente conhecido e, nesse ponto, desprovido.   (TNU, PUIL 0011441-43.2015.4.03.6301,   TURMA NACIONAL DE UNIFORMIZAÇÃO  , Relator   FABIO DE SOUZA SILVA  , D.E. 28/05/2025)">
+                                <i class="material-icons icon-aligned iconeComTexto mr-1">
+                                   content_copy
+                                </i>
+                            </a>
+                                                <a href="javascript:void(0)"
+                           class="text-dark gerarPDFDocumento"
+                           title="Gerar PDF para impressão"
+                           data-id="771749245207494946201658054330">
+                           <i class="material-icons icon-aligned iconeComTexto mr-1">
+                           picture_as_pdf
+                           </i>
+                        </a>
+                                                                        </span>
+                    </div>
+                </h4>
+            </div>
+
+            
+    <div id="771749245207494946201658054330">
+        <div class="card-body py-2 px-3">
+            <div class="text-center">
+                <div class="resValueTipoJurisprudencia">Acórdão</div>
+            </div>
+                            <div class="row">
+                    <div class="col-12 col-md-9 mt-lg-auto mt-3">
+                        <div class="resLabel">PROCESSO</div>
+                        <div class="resValue">
+                            <div class="row">
+                                <div class="col-12 col-md-auto">
+                                                                            0011441-43.2015.4.03.6301/TNU
+                                                                    </div>
+                                <div class="col-12 col-md-auto">
+                                    <span>PUIL -   Pedido de Uniformização de Interpretação de Lei (Turma)  </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-3 mt-lg-auto mt-3">
+                        <div class="resLabel">UF</div>
+                        <div class="resValue">SP</div>
+                    </div>
+                </div>
+                        <div class="row mt-3">
+                                <div class="col-12 col-md-4">
+                    <div class="resLabel">DATA DO JULGAMENTO</div>
+                    <div class="resValue">14/05/2025</div>
+                </div>
+                <div class="col-12 col-md-4">
+                    <div class="resLabel">DATA DA PUBLICAÇÃO</div>
+                    <div class="resValue">28/05/2025</div>
+                </div>
+            </div>
+
+                        
+                                                                                        <div class="row mt-3">
+                            <div class="col">
+                                <div class="resLabel">RELATOR</div>
+                                                                    <div class="resValue completo">  FABIO DE SOUZA SILVA  </div>
+                                                            </div>
+                        </div>
+                                                                                                                            <div class="row mt-3">
+                            <div class="col">
+                                <div class="resLabel">DECISÃO</div>
+                                                                                                                                            
+                                    <div class="resValue limitado"
+                                         id="campo-771749245207494946201658054330-DECISÃO"
+                                         data-resultado-id="771749245207494946201658054330"
+                                         data-campo="DECISÃO"
+                                         data-limite="5000">
+
+                                          A Turma Nacional de Uniformização decidiu, por unanimidade, CONHECER PARCIALMENTE do recurso e, nesse ponto, a ele NEGAR PROVIMENTO.  
+
+                                                                                                                    </div>
+                                    <div class="resValue completo" id="campo-completo-771749245207494946201658054330-DECISÃO" style="display:none;">
+                                          A Turma Nacional de Uniformização decidiu, por unanimidade, CONHECER PARCIALMENTE do recurso e, nesse ponto, a ele NEGAR PROVIMENTO.  
+                                    </div>
+                                                            </div>
+                        </div>
+                                                                                                                            <div class="row mt-3">
+                            <div class="col">
+                                <div class="resLabel">EMENTA</div>
+                                                                    <div class="resValue completo">  DIREITO PREVIDENCIÁRIO. PEDIDO DE UNIFORMIZAÇÃO NACIONAL. BENEFÍCIO POR INCAPACIDADE. INCAPACIDADE PREEXISTENTE AO REINGRESSO NO RGPS. REEXAME PROBATÓRIO. IMPOSSIBILIDADE. SÚMULA 42 DA TNU. REVOGAÇÃO DE TUTELA ANTECIPADA. RESTITUIÇÃO DOS VALORES RECEBIDOS PELO SEGURADO. PUIL PARCIALMENTE CONHECIDO E NESSE PONTO IMPROVIDO.
+I. Caso em exame
+1. Pedido de Uniformização de Interpretação de Lei - PUIL contra acórdão que reformou a sentença de procedência de concessão de benefício por incapacidade ao segurado, por entender que restou comprovado nos autos que a incapacidade era preexistente ao reingresso do segurado ao RGPS. Ademais, determinou a revogação da tutela antecipada concedida pelo Juízo a quo e determinou a restituição dos respectivos valores recebidos pelo autor.
+II. Questão em discussão
+2. A questão em discussão consiste em saber se o acórdão contraria o entendimento fixado pela TNU no julgamento do Pedilef 05080888320104058102 quanto à possibilidade de concessão do benefício em questão caso, embora a doença seja preexistente, a incapacidade seja posterior ao ingresso ou reingresso do segurado no RGPS. Consiste, ainda, em definir a repetibilidade dos valores recebidos pelo segurado a título de tutela antecipada posteriormente revogada.
+III. Razões de decidir
+3. Observe-se que o acórdão recorrido não negou aplicação ao entendimento fixado pela TNU no julgamento do Pedilef 05080888320104058102, no qual se entendeu que apenas quando a incapacidade (e não a doença) é preexistente, descabe o auxílio-doença, não sendo o caso de incapacidade decorrente de agravamento de patologia já adquirida quando do (re)ingresso no sistema. Diversamente, a Turma Recursal entendeu que, no caso concreto, restou demonstrado que a própria incapacidade do autor, e não a doença, é preexistente ao seu reingresso no RGPS.
+4. Conclusão em sentido diverso demandaria reexame probatório dos autos, o que é vedado nessa instância, nos termos da Súmula 42 da TNU.
+5. Quanto à repetibilidade dos valores recebidos pelo segurado a título de tutela antecipada posteriormente revogada, restou demonstrada a divergência em relação ao paradigma apontado, devendo o recurso ser conhecido nesse ponto.
+ 6. Ocorre que, posteriormente ao julgamento apontado, o STJ definiu a seguinte tese, no julgamento do Tema repetitivo 692, a qual, inclusive, foi recentemente complementada pela reconhecer a possibilidade de devolução dos respectivos valores nos próprios autos: A reforma da decisão que antecipa os efeitos da tutela final obriga o autor da ação a devolver os valores dos benefícios previdenciários ou assistenciais recebidos, o que pode ser feito por meio de desconto em valor que não exceda 30% (trinta por cento) da importância de eventual benefício que ainda lhe estiver sendo pago, restituindo-se as partes ao estado anterior e liquidando-se eventuais prejuízos nos mesmos autos, na forma do art. 520, II, do CPC/2015 (art. 475-O, II, do CPC/73).
+7. Sendo assim, o acórdão recorrido encontra-se de acordo com o entendimento jurisprudencial mais atualizado, devendo ser mantido.
+IV. Dispositivo
+8. Pedido de Uniformização parcialmente conhecido e, nesse ponto, desprovido.  </div>
+                                                            </div>
+                        </div>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        </div>
+    </div>
+
+        </div>
+    
+    
+    <div class="modal mt-3" id="modalCitacao" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title">
+                        Citação
+                    </h2>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="citacao" id="divConteudoCitacao">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <a id="iconCopiarCitacao" href="#/" class="eproc-button text-success m-1" title="">
+                        <i class="material-icons icon-aligned-sm iconeComTexto" style="font-size: 1.2rem">content_paste</i>
+                        Copiar
+                    </a>
+                    <button class="btn btn-sm btn-secondary" data-dismiss="modal">Fechar</button>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    </div>
+</div>
+            </div>
+        </div>
+
+    </div>
+
+    </form>
+                <link rel="stylesheet" href="css/dist/bundle-jquery-ui.b84e613d579b13a6.css">
+
+                <!-- src file: web/js/src/main-pos--><script type="text/javascript" charset="utf-8" src="js/dist/npm.lodash.44dd686bca961aed.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.marked.fee8643306ac8f05.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.unorm.55391aaeecff6d5f.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.lodash.debounce.672bc626be69cd98.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-buttons.fa8e16ffcc441847.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.pdfmake.dcbbc86e2e0a0731.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net.b8f4118f32644fdc.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-select.c0e340f8e3428ef8.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-select-bs4.390f4362c9acd3bd.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-rowgroup.4f1806aa0fd3d4e5.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-rowgroup-bs4.42b6c6d0dceb57ab.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-responsive.0745837e08112e0a.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-responsive-bs4.0d7fa806c7d913aa.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-buttons-bs4.df8ccc2693b6cc75.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.datatables.net-bs4.6dc58b81449882be.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.plupload.29bcc86105062acc.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.jszip.24761c354ad92ea8.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/npm.focus-within-polyfill.240263f8b5b08522.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/991.3f43d5f5bd25cf8b.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/9364.c3d075a71f8ab666.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/8137.67682088f5c4539f.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/5569.461201f52fc95bf5.js"></script>
+<script type="text/javascript" charset="utf-8" src="js/dist/main-pos.f120a089ec8fe549.js"></script>
+                
+			<link href="infra_css/infra-barra-progresso.css?9.23.5-3.0.8" rel="stylesheet" type="text/css" media="all" /><link href="infra_css/infra-impressao-global.css?9.23.5-3.0.8" rel="stylesheet" type="text/css" media="print" />
+	<link href="infra_css/infra-ajax.css?9.23.5-3.0.8" rel="stylesheet" type="text/css" media="all" />
+				<link href="infra_js/calendario/v1/infra-calendario.css?9.23.5-3.0.8" rel="stylesheet" type="text/css" media="all" />
+				<link href="infra_js/mapa/infra-mapa.css?9.23.5-3.0.8" rel="stylesheet" type="text/css" media="all" />
+		                        <div class="bootstrap-styles">
+                            
+                        </div>
+                    </div>
+                </div>
+                            </div>
+        </div>
+    </div>
+
+    
+    <input type="hidden" id="hdnInfraPrefixoCookie" name="hdnInfraPrefixoCookie" value="TRF4_Eproc_"/>
+
+            <script>
+            $(function() {
+                if(window.ClienteWebsocket) {
+                    delete window.ClienteWebsocket;
+                }
+                var currentScript;
+                currentScript = document.currentScript || document.scripts[document.scripts.length - 1];
+                currentScript.parentNode.removeChild(currentScript);
+            })
+        </script>
+    
+    <div id="infraDivImpressao" class="infraImpressao"></div>
+    
+
+    <div class='bootstrap-styles' aria-live="polite">
+        <div id="toasts-container" class="d-block flex-column-reverse w-100 p-2 align-content-end h-100 w-100 fixed-bottom pe-none" style="pointer-events: none"></div>
+    </div>
+
+    <script src="js/siscom_desktop_icone.js"></script>
+</body>
+
+
+
+</html>

@@ -297,6 +297,8 @@ test("disjuntor — reserva, escada só com rajada, fail-closed em estado ilegí
 test("desafio de navegador ≠ bloqueio por robotização", () => {
   assert.ok(lib.ehDesafioNavegador("<title>Just a moment...</title>"));
   assert.ok(!lib.ehDesafioNavegador("acesso bloqueado por robotização"));
+  // CJF, 29/10/2026: página "Verificação de Segurança" (F5) no lugar do formulário
+  assert.ok(lib.ehDesafioNavegador("<html><head><title>Verificação de Segurança | Conselho da Justiça Federal</title>"));
 });
 
 test("envelope — some com o conteúdo dos CDATA", () => {
@@ -815,6 +817,8 @@ function portalNumero({ falha = false } = {}) {
       if (/eproctnu/.test(url)) return new Response(fs.readFileSync(path.join(fx, "12_tnu_inteiro_teor.html")), { status: 200, headers: { "content-type": "text/html; charset=ISO-8859-1" } });
       return new Response(ler(tnu ? "10_tnu_index.html" : "01_index.html"), { status: 200, headers: { "content-type": "text/html;charset=UTF-8" } });
     }
+    // v1.8.0: a base tnu pesquisa no eproc da TNU (POST simples, resposta HTML ISO-8859-1)
+    if (/eproctnu-jur/.test(url)) return new Response(fs.readFileSync(path.join(fx, "13_tnu_eproc_numero.html")), { status: 200, headers: { "content-type": "text/html; charset= ISO-8859-1" } });
     if (!/actPesquisar/.test(String(init.body || "")) && /ckbAvancada/.test(String(init.body || ""))) return respXml(ler("05_ckbavancada.xml"));
     return respXml(ler(tnu ? "11_tnu_busca.xml" : "02_busca_dano_moral.xml"));
   };
@@ -839,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.7.5");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.8.0");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -920,13 +924,14 @@ test("v1.6.0 L2 (1d) verificar_citacao com recibo de busca: TNU vai ao portal; t
   const dir = pastaTmp(t);
   const env = { TRF1_MCP_DIR_RECIBOS: dir };
   // TNU: o recibo de busca NÃO tem inteiro teor -> vai ao portal, nunca conclui ❌ por falta de texto
-  const dTnu = docsDoFixture("11_tnu_busca.xml", "tnu")[0];
+  const dTnu = lib.parsearResultadosTnu(ler("13_tnu_eproc_numero.html", "latin1"))[0];
   assert.equal(lib.gravarRecibosDaBusca([dTnu], null, env), 1);
   assert.ok(!lib.lerRecibo(dTnu.id, env).inteiro_teor);
   const trechoTnu = "A Turma Nacional de Uniformização decidiu, por unanimidade, CONHECER PARCIALMENTE do recurso";
   const f1 = portalNumero();
   const vt = await lib.verificarCitacao(dTnu.numero, trechoTnu, "tnu", f1, env);
-  assert.ok(f1.chamadas.length >= 3 && vt.includes("fonte: portal") && vt.includes("✅"), vt.slice(0, 400));
+  // v1.8.0: busca no eproc da TNU (1 POST) + inteiro teor (1 GET); nada vai ao portal do CJF
+  assert.ok(f1.chamadas.length === 2 && f1.chamadas.every((c) => c.includes("eproctnu-jur")) && vt.includes("fonte: portal") && vt.includes("✅"), vt.slice(0, 400));
   const rp = lib.lerRecibo(dTnu.id, env);
   assert.ok(rp.origem === "decisao" && rp.inteiro_teor_incluido);   // o portal promoveu o recibo
   lib._resetDisjuntorParaTeste();
@@ -1589,4 +1594,99 @@ test("red team 22/10 rodada 3 (fail-closed à toa) fragmentos repetidos ('X Vota
   // unidade: a âncora mais próxima não fecha a cadeia, a seguinte fecha
   const nt = "aa bb x aa bb y aa bb";
   assert.deepEqual(lib.faixaNorm(nt, ["aa bb", "aa bb"], 0.99), [8, 21]);
+});
+
+// Migração do CJF: o roteamento legado é exclusivo do TRF1.
+test("v1.8.0 TRF1 e Colegiado usam o host legado do CJF; a TNU nunca passa por ele", () => {
+  assert.equal(lib.endpointPortal("trf1"), "https://antiga-jurisprudencia.cjf.jus.br/trf1/index.xhtml");
+  assert.equal(lib.endpointPortal("colegiado"), "https://antiga-jurisprudencia.cjf.jus.br/colegiado/index.xhtml");
+  assert.equal(lib.REPO_GITHUB, "robertogecia/trf1-jurisprudencia-mcpb");   // o repositório Python está arquivado: issue lá não abre
+});
+
+test("v1.8.0 TNU (eproc): tradução da consulta — nada que vire zero falso", () => {
+  const t = (q) => lib.traduzirConsultaTnu(q);
+  assert.equal(t("aposentadoria E especial").consulta, "aposentadoria E especial");   // E/OU/aspas/parênteses o eproc aceita
+  assert.equal(t("(a OU b) E \"c d\"").consulta, "(a OU b) E \"c d\"");
+  assert.equal(t("a NAO b").consulta, "a não b");
+  const p = t("a ADJ3 b PROX c");
+  assert.equal(p.consulta, "a prox b prox c");
+  assert.equal(p.avisos.length, 1);
+  assert.equal(t("a COM b").consulta, "a e b");
+  assert.equal(t("embarg$").consulta, "embarg*");   // $ derruba a consulta no eproc
+  assert.equal(t("contrato com banco").consulta, "contrato com banco");   // minúscula é palavra, não operador
+  assert.equal(t("\"x ADJ y\"").consulta, "\"x ADJ y\"");   // dentro de aspas nada muda
+  assert.throws(() => t("silva[REL]"), lib.ErroDeParametro);
+  assert.throws(() => t("a XOU b"), lib.ErroDeParametro);
+});
+
+test("v1.8.0 TNU (eproc): parser da lista, total, destaque e link do inteiro teor", () => {
+  const h = ler("14_tnu_eproc_busca.html", "latin1");
+  assert.equal(lib.extrairTotalTnu(h), 728);
+  const ds = lib.parsearResultadosTnu(h);
+  assert.equal(ds.length, 10);
+  const d = ds[0];
+  assert.equal(d.numero, "0004604-91.2018.4.01.3400");
+  assert.equal(d.numero_digitos.length, 20);
+  assert.ok(d.sigla === "PUIL" && d.relator === "ANDRÉ DIAS FERNANDES" && d.data_julgamento === "27/10/2026" && d.data_publicacao === "28/10/2026");
+  assert.equal(d.fonte_publicacao, "D.E. 28/10/2026");
+  assert.ok(d.ementa.includes("«INCAPACIDADE»"), d.ementa.slice(0, 200));   // destaque do eproc vira «» como no CJF
+  assert.ok(d.decisao.startsWith("A Turma Nacional de Uniformização decidiu") && !d.decisao.endsWith("p"));   // versão completa, não a limitada
+  assert.ok(d.link_tipo === "tnu" && d.link_inteiro_teor.startsWith(lib.SITE_TNU) && !d.link_inteiro_teor.includes("termosPesquisados"));
+  assert.equal(new Set(ds.map((x) => x.id)).size, 10);
+  const vazio = lib.parsearResultadosTnu("<div>0 documentos encontrados</div>");
+  assert.equal(vazio.length, 0);
+  assert.ok(lib.RE_PAGINA_TNU.test("0 documentos encontrados") && !lib.RE_PAGINA_TNU.test("<title>Verificação de Segurança</title>"));
+});
+
+test("v1.8.0 TNU (eproc): relator e classe casam com a lista do portal; formulário", () => {
+  const rel = ["ANDRE DIAS FERNANDES", "ANDRÉ DIAS FERNANDES", "FABIO DE SOUZA SILVA", "FABIO CESAR DOS SANTOS OLIVEIRA"];
+  assert.deepEqual(lib.casarNaListaTnu("André Dias", rel), ["ANDRE DIAS FERNANDES", "ANDRÉ DIAS FERNANDES"]);   // as duas grafias do portal
+  assert.deepEqual(lib.casarNaListaTnu("fabio souza silva", rel), ["FABIO DE SOUZA SILVA"]);
+  assert.deepEqual(lib.casarNaListaTnu("ninguém", rel), []);
+  const cl = ["MANDADO DE SEGURANÇA", "PEDIDO DE UNIFORMIZAÇÃO DE INTERPRETAÇÃO DE LEI (PRESIDÊNCIA)", "PEDIDO DE UNIFORMIZAÇÃO DE INTERPRETAÇÃO DE LEI (TURMA)", "RECLAMAÇÃO"];
+  assert.equal(lib.casarNaListaTnu("PUIL", cl, { PUIL: "PEDIDO DE UNIFORMIZA" }).length, 2);
+  const f = lib.formTnu({ consulta: "x", tipos: ["ACORDAO", "DECISAOMONO"], numero: "0004604-91.2018.4.01.3400", dataInicio: "01/01/2025", tipoData: "publicacao", relevante: true, pagina: 3, tamanho: 50 });
+  const m = Object.fromEntries(f.filter(([k]) => !k.endsWith("[]")));
+  assert.deepEqual(f.filter(([k]) => k === "selTipoDocumento[]").map(([, v]) => v), ["1", "2"]);
+  assert.ok(m.dtPublicacaoInicio === "01/01/2025" && !("dtDecisaoInicio" in m) && m.chkPrecedenteRelevante === "on");
+  assert.ok(m.hdnPaginaAtual === "3" && m.selTamanhoPagina === "50" && m.txtProcesso);
+});
+
+test("v1.8.0 TNU (eproc): buscar ponta a ponta, filtros fora do portal e REPRESENTATIVO", async (t) => {
+  comEstadoLimpo(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const corpos = [];
+  const f = async (url, init = {}) => {
+    corpos.push([String(url), String(init.body || "")]);
+    return new Response(fs.readFileSync(path.join(fx, "14_tnu_eproc_busca.html")), { status: 200, headers: { "content-type": "text/html; charset=ISO-8859-1" } });
+  };
+  const out = await lib.buscar({ consulta: "auxílio ADJ doença", base: "tnu", tipo_acordao: ["RELEVANTE"] }, f, env);
+  assert.ok(out.includes("728") && out.includes("0004604-91.2018.4.01.3400"), out.slice(0, 500));
+  assert.ok(out.includes("prox"), "o aviso da tradução aparece");
+  assert.equal(corpos.length, 1);
+  assert.ok(corpos[0][0].includes("listar_resultados") && corpos[0][1].includes("chkPrecedenteRelevante=on") && corpos[0][1].includes("prox"));
+  assert.match(await lib.buscar({ consulta: "x", base: "tnu", orgao_julgador: "TURMA" }, f, env), /Erro de parâmetro.*orgao_julgador/s);
+  assert.match(await lib.buscar({ consulta: "x", base: "tnu", tipo_acordao: ["REPRESENTATIVO"] }, f, env), /Erro de parâmetro.*BNP/s);
+  assert.equal(corpos.length, 1);   // erro de parâmetro não gasta requisição
+});
+
+test("v1.8.0 captcha do CJF: falha fechada, não pausa o disjuntor (a TNU segue) e não insiste por 30 min", async (t) => {
+  comEstadoLimpo(t);
+  lib._setCaptchaCjfParaTeste(0);   // outro teste pode ter visto um desafio antes
+  t.after(() => lib._setCaptchaCjfParaTeste(0));
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  let chamadasCjf = 0;
+  const f = async (url) => {
+    if (String(url).includes("cjf.jus.br/trf1") || String(url).includes("antiga-jurisprudencia")) {
+      chamadasCjf++;
+      return new Response("<html><head><title>Verificação de Segurança | Conselho da Justiça Federal</title></head><body>/TSPD/</body></html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    }
+    return new Response(fs.readFileSync(path.join(fx, "14_tnu_eproc_busca.html")), { status: 200, headers: { "content-type": "text/html; charset=ISO-8859-1" } });
+  };
+  const r1 = await lib.buscar({ consulta: "dano moral" }, f, env);
+  assert.ok(r1.startsWith("[PESQUISA NÃO REALIZADA") && r1.includes("CAPTCHA") && r1.includes("base=\"tnu\""), r1.slice(0, 300));
+  const r2 = await lib.buscar({ consulta: "dano moral" }, f, env);
+  assert.ok(r2.includes("não tenta o CJF de novo") && chamadasCjf === 1, r2.slice(0, 300));
+  const r3 = await lib.buscar({ consulta: "aposentadoria", base: "tnu" }, f, env);
+  assert.ok(r3.includes("728"), r3.slice(0, 300));   // sem pausa do disjuntor: a TNU, em outro portal, continua
 });

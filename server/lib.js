@@ -17,10 +17,20 @@ import { checarSemanal } from "./semana.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.7.5";
-export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcp";
+export const VERSAO = "1.8.0";
+// v1.8.0: o repositório Python (trf1-jurisprudencia-mcp) está arquivado e não aceita issue; relato e User-Agent apontam o atual.
+export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcpb";
 
 export const SITE = "https://jurisprudencia.cjf.jus.br";
+// v1.8.0 (29/10/2026): o CJF lançou portal novo em jurisprudencia.cjf.jus.br e pôs captcha (F5) no caminho
+// antigo desse host. A versão antiga, a mesma aplicação JSF de antes, segue publicada pelo próprio CJF
+// (link "versão antiga do sistema" no portal novo) em antiga-jurisprudencia.cjf.jus.br, sem captcha.
+// TRF1 e Colegiado vão para lá; a TNU usa o portal próprio dela (SITE_TNU). Se o captcha chegar a esse
+// host, a consulta falha fechada — nunca se contorna.
+export const SITE_TRF1 = "https://antiga-jurisprudencia.cjf.jus.br";
+export function endpointPortal(base) {
+  return (base === "tnu" ? SITE : SITE_TRF1) + BASES[base].caminho;
+}
 export const BASES = {
   trf1: { caminho: "/trf1/index.xhtml", rotulo: "TRF1", tribunal: "TRF-1",
     tipos: ["ACORDAO", "SUMULA", "ARGUICAO", "DECISAOMONO"], fonte: true, tipoAcordao: false, avancada: true },
@@ -2411,7 +2421,7 @@ export function _resetDisjuntorParaTeste() {
 }
 
 // ---------------------------------------------------------- camada HTTP / sessão JSF ---
-const RE_DESAFIO = /<title>\s*just a moment|cf-mitigated|challenges\.cloudflare\.com|cf-chl|\/TSPD\/|loaderConfig/i;
+const RE_DESAFIO = /<title>\s*just a moment|cf-mitigated|challenges\.cloudflare\.com|cf-chl|\/TSPD\/|loaderConfig|<title>\s*Verifica[çc][ãa]o de Seguran[çc]a/i;
 const RE_BLOQUEIO_ANTIROBO = /acesso (foi )?bloqueado|p[aá]gina bloqueada|robotiza|suspeita de automa/i;
 export const ehDesafioNavegador = (texto) => RE_DESAFIO.test(texto || "");
 const RE_SESSAO_EXPIRADA = /ViewExpired|sess[aã]o expirad|view state could not be restored/i;
@@ -2419,6 +2429,20 @@ const RE_SESSAO_EXPIRADA = /ViewExpired|sess[aã]o expirad|view state could not 
 export function envelope(texto) {
   const e = (texto || "").replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, " ");
   return e.split("<![CDATA[")[0].slice(0, 20_000);
+}
+
+// v1.8.0: desde 28/10/2026 o portal do CJF pede captcha de imagem (F5) a quem não é navegador.
+// Não se contorna — nem por navegador automatizado, nem com cookie de sessão humana, nem repassando
+// o captcha ao usuário: tudo isso é fazer um programa passar pela verificação feita para barrá-lo.
+export const CAPTCHA_CJF_MS = 30 * 60_000;
+let captchaCjfEm = 0;
+export function _setCaptchaCjfParaTeste(t) { captchaCjfEm = t; }
+export const MSG_CAPTCHA_CJF = "o portal do CJF respondeu com CAPTCHA (\"Verificação de Segurança\") à consulta automatizada. " +
+  "Isso não é bloqueio por volume e não se contorna (nem por navegador automatizado, nem com cookie copiado do navegador). " +
+  "O TRF1 e o Colegiado do CJF ficam sem consulta por esta extensão enquanto isso durar: pesquise em jurisprudencia.cjf.jus.br " +
+  "no navegador e traga o número para conferir aqui. A TNU segue disponível por base=\"tnu\", que usa o portal próprio da TNU (eproc)";
+export function captchaCjfRecente(agora = Date.now()) {
+  return captchaCjfEm > 0 && agora - captchaCjfEm < CAPTCHA_CJF_MS;
 }
 
 function diagnosticarResposta(status, ctype, texto, esperado) {
@@ -2502,6 +2526,13 @@ export async function requisitar(jar, metodo, url, operacao, { data, headers = {
   const env_ = envelope(texto);
   const ehDesafio = ehDesafioNavegador(env_);
   const ehBloqueio = RE_BLOQUEIO_ANTIROBO.test(env_);
+  if (ehDesafio && (String(url).startsWith(SITE) || String(url).startsWith(SITE_TRF1))) {
+    // v1.8.0: o captcha do CJF não é bloqueio por volume — não pausa o disjuntor (que é o mesmo da TNU,
+    // em outro portal); só faz o TRF1/Colegiado não tentar de novo por CAPTCHA_CJF_MS.
+    ritmoAnotar(t0Ms, operacao, "desafio", r.status, durMs, null, env);
+    captchaCjfEm = Date.now();
+    throw new PortalRecusou(MSG_CAPTCHA_CJF);
+  }
   if (ehDesafio || ehBloqueio || r.status === 403 || r.status === 429) {
     const campos = (data && !Array.isArray(data) ? data : Object.fromEntries(data || [])) || {};
     const operacaoReal = campos.nr_processo && !campos.query ? "inteiro_teor" : "busca";
@@ -2527,6 +2558,10 @@ export async function requisitar(jar, metodo, url, operacao, { data, headers = {
   if (esperado === "html" && !texto.includes("javax.faces.ViewState")) {
     ritmoAnotar(t0Ms, operacao, "inesperada", r.status, durMs, null, env);
     throw new PesquisaNaoRealizada(diagnosticarResposta(r.status, ctype, texto, "a página do formulário"));
+  }
+  if (esperado === "tnu" && !RE_PAGINA_TNU.test(texto)) {
+    ritmoAnotar(t0Ms, operacao, "inesperada", r.status, durMs, null, env);
+    throw new PesquisaNaoRealizada(diagnosticarResposta(r.status, ctype, texto, "a página de resultados do portal da TNU"));
   }
   ritmoAnotar(t0Ms, operacao, "ok", r.status, durMs, null, env);
   registrarSucesso();
@@ -2577,8 +2612,12 @@ function formPaginacao(first, rows, viewstate) {
 const INTEIRO_TEOR_MAX_DOCS = 3;
 
 export async function consultarPortal(consulta, tipos, fontes, pagina, porPagina, avancados, tipoData, operacao, base = "trf1", tipoAcordao = [], fetchImpl = fetch, env = process.env) {
+  if (base === "tnu") return consultarTnu(consulta, tipos, pagina, porPagina, avancados, tipoData, operacao, tipoAcordao, fetchImpl, env);
+  if (captchaCjfRecente()) {
+    throw new PortalRecusou(`${MSG_CAPTCHA_CJF} (captcha visto há ${fmtHms(Date.now() - captchaCjfEm)}; a extensão não tenta o CJF de novo antes de ${fmtHms(CAPTCHA_CJF_MS)})`);
+  }
   const chave = JSON.stringify([base, consulta, tipos, fontes, pagina, porPagina, avancados, tipoData, tipoAcordao]);
-  const endpoint = SITE + BASES[base].caminho;
+  const endpoint = endpointPortal(base);
   const headersAjax = { ...HEADERS_AJAX, Referer: endpoint };
   const emCache = cacheLer(chave);
   if (emCache !== null) return emCache;
@@ -2666,11 +2705,196 @@ export async function anexarInteiroTeorTnu(docs, operacao, fetchImpl = fetch, en
   return avisos;
 }
 
+// --------------------------------------------------- TNU pelo portal próprio (v1.8.0) ---
+// 28/10/2026: o portal da Jurisprudência Unificada do CJF passou a responder com captcha
+// (F5, "Verificação de Segurança") a cliente que não é navegador. A TNU tem portal de
+// jurisprudência próprio no eproc (eproctnu-jur.cjf.jus.br): formulário HTTP comum, sem
+// captcha, login nem JavaScript. A base 'tnu' passa a consultá-lo; TRF1 e Colegiado seguem
+// só no portal do CJF. Operador que esse motor não conhece NÃO dá erro: dá "0 documentos
+// encontrados" (medido 29/10/2026 com ADJ e PROX5) — por isso a consulta é traduzida antes
+// de sair, e o que não tem tradução é erro de parâmetro, nunca um zero falso.
+export const SITE_TNU = "https://eproctnu-jur.cjf.jus.br/eproc/";
+const ACAO_TNU = "externo_controlador.php?acao=jurisprudencia@jurisprudencia/";
+export const URL_TNU_PESQUISA = SITE_TNU + ACAO_TNU + "pesquisar";
+const URL_TNU_LISTAR = SITE_TNU + ACAO_TNU + "listar_resultados";
+const URL_TNU_PAGINAR = SITE_TNU + ACAO_TNU + "ajax_paginar_resultado";
+const URL_TNU_LISTAS = SITE_TNU + ACAO_TNU + "ajax_carregar_listas_pesquisa";
+export const TNU_POR_PAGINA = [10, 25, 50, 100];
+const TIPO_DOC_TNU = { ACORDAO: "1", DECISAOMONO: "2", DECISAOPRES: "3" };
+export const FILTROS_TNU = ["relator", "classe", "numero", "data_inicio", "data_fim"];
+const SIGLAS_CLASSE_TNU = { PUIL: "PEDIDO DE UNIFORMIZA", PEDILEF: "PEDIDO DE UNIFORMIZA", MS: "MANDADO DE SEGURAN", RCL: "RECLAMA" };
+export const RE_PAGINA_TNU = /documentos? encontrad|class="card mb-3 resultadoItem"|Documento \d+ de \d+/;
+
+/** Consulta na sintaxe do portal do CJF → sintaxe do eproc da TNU. Só operadores em MAIÚSCULAS são traduzidos (em minúscula são palavras do texto). */
+export function traduzirConsultaTnu(consulta) {
+  const avisos = [];
+  const partes = String(consulta || "").split(/("[^"]*")/);
+  const saida = partes.map((p, i) => {
+    if (i % 2 === 1) return p;   // frase entre aspas vai como está
+    const campo = /\[(-?[A-Za-z]{2,4})\]/.exec(p);
+    if (campo) {
+      throw new ErroDeParametro(`o sufixo de campo [${campo[1]}] não existe no portal da TNU; use os filtros relator, classe, numero, data_inicio e data_fim`);
+    }
+    if (/(^|[\s(])XOU(?=[\s)]|$)/.test(p)) throw new ErroDeParametro("o operador XOU não existe no portal da TNU; reescreva com E, OU e NÃO");
+    let t = p.replace(/(^|[\s(])(ADJ|PROX)(\d{1,2})?(?=[\s)]|$)/g, (_, a, op, n) => {
+      if (op === "ADJ" || n) avisos.push("o portal da TNU só tem proximidade genérica: ADJ/PROXn virou prox (sem ordem nem distância)");
+      return `${a}prox`;
+    });
+    t = t.replace(/(^|[\s(])(NAO|NÃO)(?=[\s)]|$)/g, "$1não");
+    t = t.replace(/(^|[\s(])(COM|MESMO)(?=[\s)]|$)/g, (_, a) => {
+      avisos.push("o portal da TNU não tem COM/MESMO (mesmo parágrafo/campo): virou E");
+      return `${a}e`;
+    });
+    return t.replace(/\$/g, "*").replace(/\?/g, "*");   // truncamento: o eproc usa *, e $ derruba a consulta
+  }).join("");
+  return { consulta: saida.replace(/\s+/g, " ").trim(), avisos: [...new Set(avisos)] };
+}
+
+export function extrairTotalTnu(html) {
+  let m = /name="hdnTotalResultado"[^>]*value="(\d+)"/.exec(html || "") || /value="(\d+)"[^>]*name="hdnTotalResultado"/.exec(html || "");
+  if (m) return Number(m[1]);
+  m = /Documento \d+ de (\d+)/.exec(html || "");
+  if (m) return Number(m[1]);
+  m = /(\d+) documentos? encontrad/.exec(html || "");
+  return m ? Number(m[1]) : 0;
+}
+
+const RE_ITEM_TNU = /<div class="card mb-3 resultadoItem" id="resultado(\d+)"/;
+const destaqueTnu = (h) => (h || "").replace(/<b>\s*<font[^>]*>([\s\S]*?)<\/font>\s*<\/b>/gi, "<font><b>$1</b></font>");
+
+export function parsearResultadosTnu(html) {
+  const partes = splitComCaptura(RE_ITEM_TNU, html || "");
+  const docs = [];
+  const vistos = new Set();
+  for (let i = 1; i < partes.length - 1; i += 2) {
+    const id = partes[i];
+    const bloco = partes[i + 1];
+    if (vistos.has(id)) continue;
+    vistos.add(id);
+    const valores = {};
+    let rotulo = "";
+    for (const m of bloco.matchAll(/class="(resLabel|resValue[^"]*)"[^>]*>([\s\S]*?)<\/div>/g)) {
+      if (m[1] === "resLabel") { rotulo = limpar(m[2]).toUpperCase(); continue; }
+      if (m[1].startsWith("resValueTipo")) { valores.TIPO ??= limpar(m[2]); continue; }
+      if (/\blimitado\b/.test(m[1]) || !rotulo || rotulo in valores) continue;
+      valores[rotulo] = destaqueTnu(m[2]);
+    }
+    const mCit = /data-citacao="([^"]*)"/.exec(bloco);
+    const citacaoPortal = mCit ? decodeEntities(mCit[1]) : "";
+    const mLink = /class="text-dark inteiroTeor"[\s\S]*?data-link="([^"]+)"/.exec(bloco);
+    const link = mLink ? SITE_TNU + decodeEntities(mLink[1]).replace(/&termosPesquisados=[^&]*/, "") : "";
+    const v = (r) => semDestaque(limpar(valores[r] || ""));
+    const numero = v("PROCESSO").replace(/\s*\/\s*TNU\s*$/i, "");
+    const mRef = /\(TNU,\s*([A-ZÇ]{2,10})\s+[\d.\-/]+\s*,\s*([^,]+?)\s*,/.exec(citacaoPortal);
+    const mFonte = /,\s*(D\.?\s?E\.?[^)]*?)\s*\)\s*$/.exec(citacaoPortal);
+    const d = {
+      id, base: "tnu", campos: {}, numero, numero_digitos: soDigitos(numero),
+      tipo: v("TIPO"), qualificacao: "", classe: mRef ? mRef[1] : "", sigla: mRef ? mRef[1] : "",
+      relator: v("RELATOR"), relator_convocado: "", relator_para_acordao: "",
+      origem: v("UF"), orgao: mRef ? limpar(mRef[2]) : "TURMA NACIONAL DE UNIFORMIZAÇÃO",
+      data_julgamento: v("DATA DO JULGAMENTO"), data_publicacao: v("DATA DA PUBLICAÇÃO"),
+      fonte_publicacao: mFonte ? limpar(mFonte[1]) : "",
+      ementa: limpar(valores.EMENTA || ""), decisao: limpar(valores["DECISÃO"] || ""),
+      link_inteiro_teor: link, link_tipo: link ? "tnu" : "", inteiro_teor_embutido: "",
+    };
+    d.campos = {
+      "Número": d.numero, Tipo: d.tipo, Classe: d.classe, "Relator(a)": d.relator, "Órgão julgador": d.orgao,
+      UF: d.origem, Data: d.data_julgamento, "Data da publicação": d.data_publicacao,
+      "Fonte da publicação": d.fonte_publicacao, Ementa: d.ementa, "Decisão": d.decisao, "Inteiro teor": link,
+    };
+    for (const k of Object.keys(d.campos)) if (!d.campos[k]) delete d.campos[k];
+    docs.push(d);
+  }
+  return docs;
+}
+
+/** Nomes exatos do portal para o filtro (o eproc só aceita o valor da lista, com e sem acento como entradas distintas). */
+export function casarNaListaTnu(pedido, lista, siglas = {}) {
+  const p = fold(String(pedido || "")).replace(/\s+/g, " ").trim();
+  if (!p) return [];
+  const prefixo = siglas[String(pedido).trim().toUpperCase()];
+  const alvo = prefixo ? fold(prefixo) : p;
+  const palavras = alvo.split(" ");
+  return lista.filter((nome) => {
+    const n = fold(nome);
+    return prefixo ? n.startsWith(alvo) : palavras.every((w) => n.split(/\s+/).includes(w)) || n.includes(alvo);
+  });
+}
+
+async function listasTnu(operacao, fetchImpl, env) {
+  const emCache = cacheLer("tnu:listas");
+  if (emCache !== null) return emCache;
+  const bruto = await requisitar(new CookieJar(), "POST", URL_TNU_LISTAS, operacao, { data: [["selOrigem[]", "1"]], esperado: "qualquer" }, fetchImpl, env);
+  let j;
+  try { j = JSON.parse(bruto); } catch { throw new PesquisaNaoRealizada("o portal da TNU não devolveu a lista de relatores/classes em JSON — o layout mudou?"); }
+  const listas = { relatores: Object.values(j.arrRelator || {}), classes: Object.values(j.arrClasse || {}) };
+  cacheGravar("tnu:listas", listas);
+  return listas;
+}
+
+export function formTnu({ consulta = "", tipos = [], relatores = [], classes = [], numero = "", dataInicio = "", dataFim = "",
+  tipoData = "julgamento", relevante = false, pagina = 1, tamanho = 25 }) {
+  const f = [["txtPesquisa", consulta], ["selOrigem[]", "1"]];
+  for (const t of tipos) if (TIPO_DOC_TNU[t]) f.push(["selTipoDocumento[]", TIPO_DOC_TNU[t]]);
+  if (relevante) f.push(["chkPrecedenteRelevante", "on"]);
+  f.push(["rdoCampo", "I"]);
+  if (numero) f.push(["txtProcesso", numero]);
+  for (const c of classes) f.push(["selClasse[]", c]);
+  const [ini, fim] = tipoData === "publicacao" ? ["dtPublicacaoInicio", "dtPublicacaoFim"] : ["dtDecisaoInicio", "dtDecisaoFim"];
+  if (dataInicio) f.push([ini, dataInicio]);
+  if (dataFim) f.push([fim, dataFim]);
+  for (const r of relatores) f.push(["selRelator[]", r]);
+  f.push(["selTamanhoPagina", String(tamanho)]);
+  if (pagina > 1) f.push(["hdnPaginaAtual", String(pagina)], ["hdnTotalPaginas", String(pagina)]);
+  return f;
+}
+
+export async function consultarTnu(consulta, tipos, pagina, porPagina, avancados, tipoData, operacao, tipoAcordao = [], fetchImpl = fetch, env = process.env) {
+  const chave = JSON.stringify(["tnu-eproc", consulta, tipos, pagina, porPagina, avancados, tipoData, tipoAcordao]);
+  const emCache = cacheLer(chave);
+  if (emCache !== null) return emCache;
+  if (tipoAcordao.includes("REPRESENTATIVO")) {
+    throw new ErroDeParametro("o portal da TNU não filtra Representativo de Controvérsia; para tema representativo use o BNP (bnp_precedentes) e, aqui, tipo_acordao=[\"RELEVANTE\"] ou a consulta livre");
+  }
+  const avisos = [];
+  const trad = traduzirConsultaTnu(consulta);
+  avisos.push(...trad.avisos);
+  let tamanho = porPagina;
+  if (!TNU_POR_PAGINA.includes(tamanho)) {
+    tamanho = 25;
+    avisos.push(`o portal da TNU pagina de ${TNU_POR_PAGINA.join("/")}: por_pagina=${porPagina} virou 25`);
+  }
+  const av = avancados || {};
+  let relatores = [], classes = [];
+  if (av.relator || av.classe) {
+    const listas = await listasTnu(operacao, fetchImpl, env);
+    if (av.relator) {
+      relatores = casarNaListaTnu(av.relator, listas.relatores);
+      if (!relatores.length) throw new ErroDeParametro(`relator ${JSON.stringify(av.relator)} não está na lista de relatores do portal da TNU; confira a grafia (nome completo ou sobrenomes)`);
+    }
+    if (av.classe) {
+      classes = casarNaListaTnu(av.classe, listas.classes, SIGLAS_CLASSE_TNU);
+      if (!classes.length) throw new ErroDeParametro(`classe ${JSON.stringify(av.classe)} não existe no portal da TNU; use PUIL, MS, RCL ou o nome (${listas.classes.join("; ")})`);
+    }
+  }
+  const dig = soDigitos(av.numero || "");
+  const form = formTnu({ consulta: trad.consulta, tipos, relatores, classes, numero: dig.length === 20 ? cnj(dig) : (av.numero || ""),
+    dataInicio: av.data_inicio || "", dataFim: av.data_fim || "", tipoData, relevante: tipoAcordao.includes("RELEVANTE"), pagina, tamanho });
+  const url = pagina > 1 ? URL_TNU_PAGINAR : URL_TNU_LISTAR;
+  const html = await requisitar(new CookieJar(), "POST", url, operacao, { data: form, headers: { Referer: URL_TNU_PESQUISA }, esperado: "tnu" }, fetchImpl, env);
+  const total = extrairTotalTnu(html);
+  const docs = parsearResultadosTnu(html);
+  if (!total && !docs.length && trad.consulta) avisos.push(`consulta enviada ao portal da TNU: ${trad.consulta}`);
+  const dados = { total, docs, avisos };
+  cacheGravar(chave, dados);
+  return dados;
+}
+
 // ------------------------------------------------------------------- funções de tool ---
 export function carimboNaoRealizada(motivo) {
   const m = String(motivo).trim().replace(/\.$/, "");
   let ajuda = "";
-  if (!/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed/.test(m)) {
+  if (!/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed|CAPTCHA/.test(m)) {   // captcha do CJF: não há o que o autor corrija
     ajuda = `\nSe persistir, relate: ${linkRelato(tipoDoErro(m))}` +
       "\n`diagnostico_erros_trf1` com relatorio=true gera o relatório técnico já sanitizado para colar na issue.";
   }
@@ -2731,8 +2955,11 @@ export async function buscar(a, fetchImpl = fetch, env = process.env) {
     }
     if (a.data_inicio) avancados.data_inicio = normalizarData(String(a.data_inicio), "data_inicio");
     if (a.data_fim) avancados.data_fim = normalizarData(String(a.data_fim), "data_fim");
-    if (Object.keys(avancados).length && !BASES[base].avancada) {
-      throw new ErroDeParametro(`filtros (relator, órgão, classe, número, datas…) só existem na base 'trf1'; na base '${base}' use a sintaxe de campo na consulta: nome[REL], "turma"[ORGA], 20240101[DTDP]`);
+    if (base === "tnu") {
+      const fora = Object.keys(avancados).filter((k) => !FILTROS_TNU.includes(k));
+      if (fora.length) throw new ErroDeParametro(`filtro(s) ${fora.join(", ")} não existe(m) no portal da TNU; lá há ${FILTROS_TNU.join(", ")}`);
+    } else if (Object.keys(avancados).length && !BASES[base].avancada) {
+      throw new ErroDeParametro(`filtros (relator, órgão, classe, número, datas…) só existem nas bases 'trf1' e 'tnu'; na base '${base}' use a sintaxe de campo na consulta: nome[REL], "turma"[ORGA], 20240101[DTDP]`);
     }
     consultaMontada = montarConsulta(a.consulta, a.grupos);
     if (!consultaMontada && !Object.keys(avancados).length && !tipoAcordaoV.length) {
@@ -2763,6 +2990,8 @@ export async function localizarPorNumero(numero, base, operacao, comInteiroTeor 
   let dados;
   if (base === "trf1") {
     dados = await consultarPortal("", BASES.trf1.tipos, [...FONTES_VALIDAS], 1, 50, { numero: digitos }, "julgamento", operacao, base, [], fetchImpl, env);
+  } else if (base === "tnu") {
+    dados = await consultarPortal("", BASES.tnu.tipos, [], 1, 50, { numero: digitos }, "julgamento", operacao, base, [], fetchImpl, env);
   } else {
     dados = await consultarPortal(digitos, BASES[base].tipos, [], 1, 50, {}, "julgamento", operacao, base, [], fetchImpl, env);
   }
@@ -3116,7 +3345,7 @@ export function validarOrigem(v) {
 export function tipoDoErroDiario(m) {
   m = String(m ?? "");
   if (/disjuntor em pausa|Muitas consultas|Fila de espera|fail-closed|evitando novas tentativas/i.test(m)) return "limite_de_ritmo";
-  if (/desafio|verifica[çc][ãa]o de navegador|cloudflare|just a moment/i.test(m)) return "desafio_navegador";
+  if (/desafio|captcha|verifica[çc][ãa]o de navegador|cloudflare|just a moment/i.test(m)) return "desafio_navegador";
   if (/recusa sistem[áa]tica|bloque|robotiza|automa[çc][ãa]o|HTTP 40[39]|HTTP 429/i.test(m)) return "bloqueio_do_portal";
   if (/Muitos Usu[áa]rios/i.test(m)) return "portal_congestionado";
   if (/tempo esgotado|timed? ?out/i.test(m)) return "timeout";
@@ -3222,7 +3451,7 @@ export function comDiario(nome, fn, env = process.env) {
 const CAUSAS_ERRO = {
   limite_de_ritmo: ["Muitas consultas na janela do limitador local.", "Espere o tempo indicado; use `buscar_recibos_trf1` para o que já foi lido.", "usuario"],
   bloqueio_do_portal: ["O portal do CJF recusou ou bloqueou a consulta.", "Espere a pausa terminar e faça UMA busca; o site jurisprudencia.cjf.jus.br segue como alternativa. Se repetir com pouco tráfego, a causa é externa.", "portal"],
-  desafio_navegador: ["O portal pediu verificação de navegador (Cloudflare/WAF).", "Use o site pelo navegador; esta extensão não contorna.", "portal"],
+  desafio_navegador: ["O portal pediu verificação de navegador ou CAPTCHA (Cloudflare/F5).", "Use o site pelo navegador; esta extensão não contorna. A TNU segue por base=\"tnu\" (portal próprio).", "portal"],
   portal_congestionado: ["O portal respondeu \"Muitos Usuários\" (congestionamento do CJF).", "Tente de novo em alguns minutos; não é erro da extensão.", "portal"],
   timeout: ["O portal demorou mais que o limite.", "Repita com por_pagina menor ou mais tarde.", "portal"],
   certificado: ["Certificado TLS recusado (antivírus, proxy ou data do computador errada).", "Verifique a data/hora do computador e se há antivírus ou proxy inspecionando HTTPS.", "usuario"],
@@ -3537,7 +3766,7 @@ const SEM_RELATO = new Set(["limite_de_ritmo"]);
 
 export function tipoDoErro(mensagem) {
   const m = String(mensagem || "");
-  if (/desafio de navegador|verifica[cç][aã]o de navegador/i.test(m)) return "desafio_navegador";
+  if (/desafio de navegador|captcha|verifica[cç][aã]o de navegador/i.test(m)) return "desafio_navegador";
   if (/robotiza|suspeita de automa[cç][aã]o|bloqueio anti-rob/i.test(m)) return "bloqueio_robotizacao";
   if (/Muitas consultas|disjuntor em pausa|Fila de espera/i.test(m)) return "limite_de_ritmo";
   if (/falha de rede|tempo esgotado/i.test(m)) return "rede_ou_timeout";

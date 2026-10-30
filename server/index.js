@@ -37,6 +37,9 @@ iniciarChecagemVersao();
 // Diário local de erros (v1.5.0): anota exceção e resposta [PESQUISA NÃO REALIZADA/INCOMPLETA]; nunca quebra a ferramenta.
 const tool = (nome, fn) => comDiario(nome, async (a) => comAvisos(await fn(a)));
 const texto = (t) => ({ content: [{ type: "text", text: t }] });
+// Ponte para o Datajud (22/10/2026): só texto, sem acoplar código. Andamento é outra extensão; aqui é o teor das decisões.
+const PONTE_DATAJUD = " Para saber o que andou em um processo (movimentos e capa), use a extensão Datajud; esta ferramenta trata do texto das decisões.";
+const PONTE_DJEN = " Para intimações e prazos, use o DJEN; prazo nunca sai desta ferramenta nem do Datajud.";
 
 server.registerTool(
   "buscar_jurisprudencia_trf1",
@@ -44,11 +47,14 @@ server.registerTool(
     title: "Buscar jurisprudência do TRF1/TNU",
     description:
       "Pesquisa jurisprudência do Tribunal Regional Federal da 1ª Região (TRF1 + Turmas Recursais/JEF1) " +
-      "e da Turma Nacional de Uniformização (TNU) no portal público do CJF, sem login. " +
+      "e da Turma Nacional de Uniformização (TNU), sem login. TRF1 e Colegiado: versão antiga da Jurisprudência Unificada do CJF " +
+      "(antiga-jurisprudencia.cjf.jus.br, publicada pelo próprio CJF); TNU: portal de jurisprudência próprio da TNU (eproc). " +
+      "Se o CJF responder com CAPTCHA, a busca sai como [PESQUISA NÃO REALIZADA] e não se contorna. " +
       "Bases: 'trf1' (padrão — acórdãos/súmulas/arguições/monocráticas, painel avançado, voto NÃO exposto); " +
-      "'tnu' (PUIL etc., tipo_acordao=REPRESENTATIVO/RELEVANTE para precedentes qualificados, " +
+      "'tnu' (PUIL etc., tipo_acordao=RELEVANTE para precedentes relevantes — o portal da TNU não filtra Representativo de Controvérsia, use o BNP; " +
       "inteiro teor legível — 'inteiro teor lido' possível); 'colegiado' (decisões administrativas do " +
-      "Conselho, raramente serve a litígio). Nas bases tnu/colegiado não há painel avançado: filtro vai " +
+      "Conselho, raramente serve a litígio). Na base 'tnu' há os filtros relator, classe (PUIL, MS, RCL), numero e datas; " +
+      "termo[CAMPO] não existe lá e ADJn/PROXn viram prox, COM/MESMO viram E (a resposta avisa). Na base 'colegiado' o filtro vai " +
       "na sintaxe de campo da consulta (nome[REL]). " +
       "Motor textual tipo BRS: operadores E/OU/NAO/ADJn/PROXn/COM/MESMO, aspas para frase, `$` como " +
       "radical no fim da palavra, `termo[CAMPO]` para restringir a um campo (EMEN/DECI/REL...). Não use " +
@@ -71,7 +77,7 @@ server.registerTool(
       "integrais, sem o destaque «»; na TNU, SEM inteiro teor, que a lista não traz). Isso poupa reabrir o número só para citar, mas a busca nunca " +
       "sobrescreve um recibo que já exista, o recibo de busca não prova que o processo esteja completo (verificar_citacao_trf1 não conclui ausência " +
       "por ele e, na TNU, vai ao portal) e, acima de TRF1_MCP_RECIBOS_BUSCA_MAX_MB (padrão 300), os de busca mais antigos são removidos; os de " +
-      "obter_decisao_trf1 nunca.",
+      "obter_decisao_trf1 nunca." + PONTE_DATAJUD + PONTE_DJEN,
     inputSchema: {
       consulta: z.string().default("").describe("Consulta livre na sintaxe do motor (pode ser \"\" quando usar grupos)."),
       tipo: z.array(z.string()).optional().describe("Tipos de documento. Padrão [\"ACORDAO\"]. Depende da base."),
@@ -84,23 +90,23 @@ server.registerTool(
             "Expressão com espaço vira frase exata; `$` só no fim de palavra; `termo[EMEN]` no fim de um termo restringe ao campo. " +
             "Cada grupo descreve o FATO julgado, nunca a CONCLUSÃO esperada."
         ),
-      relator: z.string().optional().describe("Nome (ou parte) do relator. Filtro do painel avançado (só base 'trf1')."),
+      relator: z.string().optional().describe("Nome (ou parte) do relator. Bases 'trf1' (painel avançado) e 'tnu' (casa com a lista de relatores do portal)."),
       orgao_julgador: z.string().optional().describe("Órgão julgador, ex.: 'QUINTA TURMA', 'SEGUNDA SEÇÃO'. Filtro do painel avançado (só base 'trf1')."),
-      classe: z.string().optional().describe("Sigla ou nome da classe, ex.: 'AC', 'AMS', 'AG'. Filtro do painel avançado (só base 'trf1')."),
+      classe: z.string().optional().describe("Sigla ou nome da classe, ex.: 'AC', 'AMS', 'AG' (trf1); 'PUIL', 'MS', 'RCL' (tnu)."),
       origem: z.string().optional().describe("Campo 'Origem' do portal = TRIBUNAL de origem (nos resultados: 'TRF - PRIMEIRA REGIÃO'); NÃO é estado nem seção judiciária — 'RO' retorna zero. Só base 'trf1'."),
-      numero: z.string().optional().describe("Número do processo (CNJ), com ou sem pontuação (só base 'trf1')."),
+      numero: z.string().optional().describe("Número do processo (CNJ), com ou sem pontuação (bases 'trf1' e 'tnu')."),
       ementa_decisao: z.string().optional().describe("Termos buscados SÓ na ementa e no dispositivo (a consulta livre varre tudo). Filtro do painel avançado (só base 'trf1')."),
       referencia_legislativa: z.string().optional().describe("Norma indexada manualmente pelo portal, ex.: 'lei 8429'; cobertura parcial: zero aqui NÃO significa que não há acórdãos sobre a norma. Só base 'trf1'."),
       data_inicio: z.string().optional().describe("AAAA-MM-DD ou DD/MM/AAAA."),
       data_fim: z.string().optional().describe("AAAA-MM-DD ou DD/MM/AAAA."),
       tipo_data: z.enum(["julgamento", "publicacao"]).optional().describe("Padrão 'julgamento'."),
       pagina: z.number().int().optional().describe("Padrão 1."),
-      por_pagina: z.number().int().optional().describe(`10, 30 ou 50 (padrão 30). ${POR_PAGINA_VALIDOS.join("/")}.`),
+      por_pagina: z.number().int().optional().describe(`10, 30 ou 50 (padrão 30). ${POR_PAGINA_VALIDOS.join("/")}. Na base 'tnu' o portal pagina de 10/25/50: 30 vira 25.`),
       base: z.enum(["trf1", "tnu", "colegiado"]).optional().describe("Padrão 'trf1'."),
       tipo_acordao: z
         .array(z.enum(Object.keys(TIPOS_ACORDAO_TNU)))
         .optional()
-        .describe("Só na base 'tnu': REPRESENTATIVO (Representativo de Controvérsia) e/ou RELEVANTE (Precedente Relevante)."),
+        .describe("Só na base 'tnu': RELEVANTE (Precedente Relevante). REPRESENTATIVO dá erro de parâmetro: o portal da TNU não tem esse filtro; use o BNP."),
     },
   },
   async (a) => texto(await tool("buscar_jurisprudencia_trf1", buscar)(a))
@@ -123,7 +129,7 @@ server.registerTool(
       "orçamento de caracteres — nunca promova EM PARTE a pleno). " +
       "Na TNU, quando a ementa ou o dispositivo do portal estão CONTIDOS letra a letra no inteiro teor exibido (só espaços e o destaque «» são " +
       "normalizados), o texto não é repetido: no lugar vai \"texto idêntico a trecho do inteiro teor abaixo\", com o começo do trecho. Se o inteiro " +
-      "teor é cortado pelo orçamento e o trecho cai na parte não exibida, o texto sai por inteiro. O recibo em disco guarda sempre o texto completo.",
+      "teor é cortado pelo orçamento e o trecho cai na parte não exibida, o texto sai por inteiro. O recibo em disco guarda sempre o texto completo." + PONTE_DATAJUD + PONTE_DJEN,
     inputSchema: {
       numero: z.string().describe("Número do processo (CNJ), com ou sem pontuação."),
       base: z.enum(["trf1", "tnu", "colegiado"]).optional().describe("Padrão 'trf1' — a mesma em que o documento foi achado."),
@@ -154,7 +160,7 @@ server.registerTool(
       "ALEGAÇÃO DA PARTE (tese da parte relatada, não decisão) e NEGAÇÃO (negativa logo antes: o recorte " +
       "inverte o julgado). Trecho com alerta NÃO entra na ficha como posição do órgão sem resolver a " +
       "atribuição. Na base 'trf1' a atribuição não é analisada porque o voto não é exposto — a resposta diz " +
-      "isso. Falha sai como [PESQUISA NÃO REALIZADA — motivo], nunca como ❌.",
+      "isso. Falha sai como [PESQUISA NÃO REALIZADA — motivo], nunca como ❌." + PONTE_DATAJUD + PONTE_DJEN,
     inputSchema: {
       numero: z.string().describe("Número do processo (CNJ), com ou sem pontuação."),
       trecho: z.string().describe("Texto que se pretende citar entre aspas (cortes marcados com [...])."),
@@ -220,7 +226,7 @@ server.registerTool(
       "consultas escritas por quem conhecia a ementa: indício). Não vale com `grupos`, `nr_processo` nem `id_documento`. " +
       "NÃO é pesquisa no acervo do CJF: zero resultado aqui NUNCA é \"não localizado\" — para isso, buscar_jurisprudencia_trf1. " +
       "Recibo editado à mão (sha256 não confere) é posto de lado e não aparece. Cada recibo sai com a origem (busca ou decisão). " +
-      "Falha de parâmetro sai como \"BUSCA LOCAL NÃO REALIZADA\".",
+      "Falha de parâmetro sai como \"BUSCA LOCAL NÃO REALIZADA\"." + PONTE_DATAJUD + PONTE_DJEN,
     inputSchema: {
       consulta: z.string().default("").describe("Palavras que devem aparecer todas."),
       grupos: z.array(z.array(z.string())).optional().describe("Grupos de sinônimos (OU dentro do grupo, E entre grupos); `$` no fim = radical."),

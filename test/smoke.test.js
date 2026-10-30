@@ -37,6 +37,14 @@ test("servidor sobe de pasta com espaço e lista as ferramentas", async () => {
     const ferramentas = (await cliente.listTools()).tools;
     assert.deepEqual(ferramentas.find((t) => t.name === "obter_decisao_trf1").inputSchema.properties.modo.enum, ["completo", "triagem"]);
     assert.equal(ferramentas.find((t) => t.name === "diagnostico_ritmo_trf1").inputSchema.properties.relatorio.type, "boolean");
+    // ponte para o Datajud (22/10/2026): as ferramentas de busca/leitura/conferência e o long_description apontam a outra extensão
+    // para andamento; o subtítulo com o crédito fica intacto
+    const PONTE = "Para saber o que andou em um processo (movimentos e capa), use a extensão Datajud; esta ferramenta trata do texto das decisões.";
+    const DJEN = "Para intimações e prazos, use o DJEN; prazo nunca sai desta ferramenta nem do Datajud.";
+    for (const n of ["buscar_jurisprudencia_trf1", "obter_decisao_trf1", "verificar_citacao_trf1", "buscar_recibos_trf1"])
+      assert.ok(ferramentas.find((t) => t.name === n).description.endsWith(PONTE + " " + DJEN), n);
+    const manifesto = JSON.parse(fs.readFileSync(path.join(raiz, "manifest.json"), "utf8"));
+    assert.ok(manifesto.long_description.includes(PONTE + " " + DJEN) && manifesto.description.startsWith("Criado pelo advogado @robertogrecia, "));
     const rel = await cliente.callTool({ name: "diagnostico_ritmo_trf1", arguments: { relatorio: true } });
     assert.ok(!rel.isError && rel.content[0].text.includes("Relatório de ritmo do portal do CJF") && rel.content[0].text.includes("0 requisições registradas"), rel.content[0].text.slice(-600));
   } finally {
