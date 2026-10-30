@@ -1,7 +1,7 @@
 /**
- * Funções do servidor MCP TRF1/TNU — porte Node.js do servidor_trf1.py (fonte de verdade:
- * mudança de comportamento entra primeiro lá, com selftest e red team, depois aqui, com o
- * teste de paridade). Separadas de index.js para permitir testes automatizados diretos.
+ * Funções do servidor MCP TRF1/TNU. Desde a v1.7.0 este é o único servidor (o Python foi arquivado).
+ * Separadas de index.js para permitir testes automatizados diretos. Fontes atuais: comentários de
+ * SITE_TRF1, SITE_TNU e DJEN_API.
  *
  * Backend (engenharia reversa do portal oficial do CJF, 11/09/2026): app Java/JSF + PrimeFaces
  * 6.2, renderizado no servidor, com sessão (cookies) e javax.faces.ViewState por sessão. Busca =
@@ -17,7 +17,7 @@ import { checarSemanal } from "./semana.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.9.0";
+export const VERSAO = "1.9.1";
 // v1.8.0: o repositório Python (trf1-jurisprudencia-mcp) está arquivado e não aceita issue; relato e User-Agent apontam o atual.
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcpb";
 
@@ -1281,6 +1281,24 @@ export function horaLocalIso(dt = new Date()) {
   return `${z(dt.getFullYear(), 4)}-${z(dt.getMonth() + 1)}-${z(dt.getDate())}T${z(dt.getHours())}:${z(dt.getMinutes())}:${z(dt.getSeconds())}`;
 }
 
+/** v1.9.1: recibo de uma publicação do DJEN (origem "djen"), gravado só quando um número específico é aberto com completo=true.
+ *  O id leva o prefixo DJEN para nunca colidir com o id do portal do CJF. Não substitui recibo de decisão. */
+export function gravarReciboDjen(p, env = process.env) {
+  try {
+    if (!p.id || !p.texto) return "";
+    const dir = DIR_RECIBOS(env);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try { fs.chmodSync(dir, 0o700); } catch { /* melhor esforço */ }
+    const d = { id: `DJEN${p.id}`, base: "trf1", numero: p.numero, numero_digitos: soDigitos(p.numero), tipo: p.tipo, classe: p.classe,
+      orgao: p.orgao, data_publicacao: p.data, link_inteiro_teor: p.link, inteiro_teor_texto: p.texto };
+    const caminho = arqRecibo(d.id, env);
+    escreverJsonAtomico(caminho, camposDeCustodia(d, "djen"));
+    return caminho;
+  } catch {
+    return "";
+  }
+}
+
 /** Recibo de DECISÃO (0600, escrita atômica; origem "decisao"): vem de obter_decisao_trf1 ou da verificação, que leram o número inteiro no
  *  portal. SOBRESCREVE e promove o recibo de busca do mesmo id. Falha é silenciosa. Devolve o caminho ou "". */
 export function gravarRecibo(d, env = process.env) {
@@ -1728,7 +1746,7 @@ export function formatBusca(docs, total, meta) {
   const filtros = meta.filtros || {};
   const base = meta.base || "trf1";
   const linhas = [];
-  let cab = `**${total} documento(s)** no portal do CJF/${BASES[base].rotulo} para \`${consulta || "(só filtros)"}\``;
+  let cab = `**${total} documento(s)** ${base === "tnu" ? "no portal da TNU" : `no portal do CJF/${BASES[base].rotulo}`} para \`${consulta || "(só filtros)"}\``;
   if (tipos.length) cab += ` · tipo: ${tipos.map((t) => TIPOS_ROTULO[t] || t).join(", ")}`;
   if (fontes.length) cab += ` · fonte: ${fontes.join("+")}`;
   if (meta.tipo_acordao?.length) cab += " · precedentes: " + meta.tipo_acordao.map((t) => TIPOS_ACORDAO_TNU[t] || t).join(", ");
@@ -1842,7 +1860,7 @@ const corteNoEspaco = (s) => { const i = s.lastIndexOf(" "); return i >= 0 ? s.s
 
 export function formatDecisao(docs, numero, total, semRepeticao = true) {
   if (!docs.length) {
-    return `Nenhum documento publicado no portal do CJF/TRF1 sob o número ${numero}. Confira o número (com ou sem pontuação); decisões muito recentes ou de 1º grau não estão na base.`;
+    return `Nenhum documento publicado nesta base sob o número ${numero}. Confira o número (com ou sem pontuação); decisões muito recentes ou de 1º grau não estão na base.`;
   }
   const linhas = [`**${docs.length} documento(s) publicado(s) sob o número ${docs[0].numero || numero}**` +
     (total > docs.length ? ` (o portal informa ${total}; mostrando os primeiros)` : "")];
@@ -2147,7 +2165,7 @@ export function reservarRequisicao(agora = Date.now()) {
   return transacao((e) => {
     if (agora < e.bloqueadoAte) {
       const motivo = e.motivoPausa || "o portal do CJF/TRF1 recusou uma consulta recente (bloqueio, desafio de navegador ou HTTP 403/429)";
-      return { erro: `disjuntor em pausa por mais ${fmtHms(e.bloqueadoAte - agora)} — ${motivo}. Para não prolongar o bloqueio, esta ferramenta não tenta de novo antes disso. O portal jurisprudencia.cjf.jus.br/trf1 segue acessível no navegador; não contornar por proxy ou outro cliente.` };
+      return { erro: `disjuntor em pausa por mais ${fmtHms(e.bloqueadoAte - agora)} — ${motivo}. Para não prolongar o bloqueio, esta ferramenta não tenta de novo antes disso. O site jurisprudencia.cjf.jus.br segue acessível no navegador; não contornar por proxy ou outro cliente.` };
     }
     const janela = ESCADA_JANELA_MS[e.indiceJanela];
     e.requisicoes = e.requisicoes.filter((t) => agora - t <= janela);
@@ -2906,7 +2924,8 @@ export async function consultarTnu(consulta, tipos, pagina, porPagina, avancados
 // API pública do CNJ (comunicaapi.pje.jus.br): sem login nem captcha, robots.txt sem restrição, 20 req/min.
 // Traz sentenças de Vara e, de meados de 2025 em diante, acórdãos do TRF1 publicados como intimação. Medido em
 // 30/10/2026: `texto` é FRASE em ordem (invertida, 236 viram 2), `count` para em 10.000, `tipoDocumento` é ignorado
-// (o filtro é local). Não grava recibo: o texto traz nomes de partes e advogados, e publicação não é jurisprudência selecionada.
+// (o filtro é local). A busca por tema não grava recibo, porque o texto traz nomes de partes e advogados; só numero + completo=true
+// grava (v1.9.1), para a citação entrar em verificar_citacao_trf1 e no lint da peticao-rg.
 export const DJEN_API = "https://comunicaapi.pje.jus.br/api/v1/comunicacao";
 export const DJEN_INICIO_UTIL = "01/06/2025";
 const DJEN_POR_PAGINA = 100;
@@ -2952,7 +2971,7 @@ export function filtroDjen(docs, grau, soSentencas) {
 }
 
 const AVISO_DJEN = "Publicação oficial do DJEN, não jurisprudência selecionada: traz só o que saiu como intimação, e nem todo acórdão vem inteiro. " +
-  "Abra o link e confira antes de citar. Esta busca não grava recibo";
+  "Abra o link e confira antes de citar";
 
 export async function buscarDjen(a = {}, fetchImpl = fetch, env = process.env) {
   try {
@@ -2996,9 +3015,10 @@ export async function buscarDjen(a = {}, fetchImpl = fetch, env = process.env) {
       (filtros ? ` · filtro local (${filtros}): ${docs.length} de ${todos.length} desta página` : ""), `⚠️ ${AVISO_DJEN}.${limiteCobertura}`, ""];
     const completo = Boolean(a.completo) && Boolean(dig);
     let orcamento = ORCAMENTO_DECISAO;
+    const gravados = completo ? todos.filter((d) => gravarReciboDjen(d, env)).length : 0;
     docs.slice(0, DJEN_MOSTRAR).forEach((d, k) => {
       linhas.push(`**${k + 1}. ${d.tipo || "Publicação"} — ${d.numero}** · ${d.classe || "classe não informada"}`);
-      linhas.push(`  ${d.orgao} (${DJEN_GRAUS[d.grau] || "grau não identificado"}) · Publicado no DJEN em ${d.data}${d.com_ementa ? " · traz ementa" : ""}`);
+      linhas.push(`  ${d.orgao} (${DJEN_GRAUS[d.grau] || "grau não identificado"}) · Publicado no DJEN em ${d.data}${d.com_ementa ? " · traz ementa" : ""} · Id. do documento: DJEN${d.id}`);
       if (d.link) linhas.push(`  Documento: ${d.link}`);
       if (completo) {
         const t = d.texto.slice(0, Math.max(0, orcamento));
@@ -3012,6 +3032,8 @@ export async function buscarDjen(a = {}, fetchImpl = fetch, env = process.env) {
     if (docs.length > DJEN_MOSTRAR) linhas.push(`Mostrando ${DJEN_MOSTRAR} de ${docs.length} desta página.`);
     if (!docs.length) linhas.push(`Nenhuma das ${todos.length} publicações desta página passou no filtro local; isso não significa que não haja outras nas próximas páginas.`);
     if (pagina * DJEN_POR_PAGINA < total) linhas.push(`Próxima página: pagina=${pagina + 1} (mesmos parâmetros).`);
+    linhas.push(gravados ? `Recibo(s) gravado(s) em ${DIR_RECIBOS(env)} (${gravados}, origem djen): verificar_citacao_trf1 e o lint da peticao-rg conferem por eles. Na ficha, use o Id. do documento.`
+      : "Esta busca não grava recibo. Para gravar, abra o processo com numero e completo=true.");
     return linhas.join("\n") + linhaDeRitmo();
   } catch (e) {
     if (e instanceof PesquisaNaoRealizada) return carimboNaoRealizada(e.message);
@@ -3172,10 +3194,17 @@ export function semDocumentoTrf1(num, digitos, modo = "completo", env = process.
   const docs = recs.map((r) => docDeRecibo(r, env));
   const lidos = recs.map((r) => `id ${r.id_documento} (lido em ${String(r.obtido_em || "?").slice(0, 10)})`).join("; ");
   const corpo = modo === "triagem" ? formatTriagem(docs, num, docs.length) : formatDecisao(docs, num, docs.length);
-  return `${cab}O que segue vem do RECIBO LOCAL, lido antes do captcha do CJF, não do portal de hoje: ${lidos}.\n\n${corpo}`;
+  return `${cab}O que segue vem do RECIBO LOCAL, lido em outra data, não do portal de hoje: ${lidos}.\n\n${corpo}`;
 }
 
 export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl = fetch, env = process.env) {
+  const t = await verificarCitacaoInterna(numero, trecho, base, fetchImpl, env);
+  // v1.9.1: ❌ no TRF1 só vale para os documentos lidos; o processo pode ter decisão posterior ao fim do acervo
+  const trf1 = String(base || "trf1").trim().toLowerCase() === "trf1";
+  return trf1 && t.includes("❌ NÃO ENCONTRADO") ? `${t}\n⚠️ ${AVISO_ACERVO_TRF1}.` : t;
+}
+
+async function verificarCitacaoInterna(numero, trecho, base, fetchImpl, env) {
   const digitos = soDigitos(numero);
   if (digitos.length < 7) return `Número muito curto para localizar com segurança: ${JSON.stringify(numero)}.`;
   if (!(trecho || "").trim()) return "Informe o trecho que pretende citar entre aspas.";
@@ -3195,10 +3224,11 @@ export async function verificarCitacao(numero, trecho, base = "trf1", fetchImpl 
       if (reciboDe) origem = `recibo local de ${reciboDe.slice(0, 10)}`;
       // v1.6.0 (porte do TJRO v1.31): recibo gravado só pela BUSCA não prova que o processo esteja completo (a lista traz só os
       // documentos que casaram). Se o trecho está nele, vale; se não está, a ausência NÃO se conclui: lê o número inteiro no portal.
-      if (recs.every((r) => r.origem === "busca")) {
+      // v1.9.1: o recibo do DJEN tem a mesma limitação: é a publicação, não o processo inteiro.
+      if (recs.every((r) => r.origem === "busca" || r.origem === "djen")) {
         const rot = BASES[base].rotulo;
         if (docs.some((d_) => verificarTrecho({ ementa: d_.ementa || "", dispositivo: d_.decisao || "", "inteiro teor": d_.inteiro_teor_texto || "" }, trecho, rot).valido)) {
-          origem = "recibo local (de busca; o processo pode ter outros documentos)";
+          origem = `recibo local (${recs.every((r) => r.origem === "djen") ? "do DJEN" : "de busca"}; o processo pode ter outros documentos)`;
         } else {
           docs = []; soBusca = true;
         }
@@ -3950,6 +3980,6 @@ export function linkRelato(tipo, agora = Date.now()) {
   const titulo = `Erro ${tipo} na v${VERSAO}`;
   const corpo = "**Relato gerado pela extensão** (revise antes de enviar; não inclua número de processo nem o texto da sua busca — issues são públicas)\n\n" +
     `- Versão: ${VERSAO}\n- Sistema: ${process.platform}\n- Tipo do erro: ${tipo}\n` + estado +
-    "\n**O que eu estava fazendo:** \n\n**A pesquisa funciona direto no portal (jurisprudencia.cjf.jus.br/trf1), pelo navegador?** sim / não\n\n**Desde quando acontece?** \n";
+    "\n**O que eu estava fazendo:** \n\n**A pesquisa funciona direto no site (jurisprudencia.cjf.jus.br), pelo navegador?** sim / não\n\n**Desde quando acontece?** \n";
   return `${ISSUES_NOVA}?title=${encodeURIComponent(titulo)}&body=${encodeURIComponent(corpo)}`;
 }

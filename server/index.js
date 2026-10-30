@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Servidor MCP — Jurisprudência do TRF1 e da TNU (portal do CJF)
+ * Servidor MCP — Jurisprudência do TRF1 e da TNU (versão antiga do portal do CJF, eproc da TNU e DJEN)
  * Servidor Node.js único (a partir da v1.7.0; o antigo servidor Python foi aposentado), empacotado em .mcpb (1 clique no Claude Desktop).
  *
  * Wiring do protocolo MCP e chamada de rede. Toda a lógica pura está em lib.js e é coberta
@@ -301,7 +301,7 @@ server.registerTool(
       "A consulta é uma FRASE exata, na ordem digitada: não há operadores, truncamento nem sinônimos, e a recusa disso é erro de parâmetro. Sem data_inicio, busca os últimos 180 dias. " +
       "Limites: o TRF1 só publica com volume no DJEN desde meados de 2025; só aparece o que saiu como intimação; nem todo acórdão vem inteiro (\"traz ementa\" diz quando veio). " +
       "É publicação, não jurisprudência selecionada: não prova posição do tribunal. Zero sai como [PESQUISA INCOMPLETA], nunca \"não localizado\". " +
-      "Não grava recibo: para citar, abra o link do documento. numero + completo=true traz o texto integral das publicações do processo. " +
+      "A busca por tema não grava recibo. numero + completo=true traz o texto integral das publicações do processo e grava recibo (origem djen), que permite verificar_citacao_trf1 e o lint; recibo do DJEN não prova que o processo esteja completo. " +
       "Prazo nunca sai desta ferramenta: para intimações e prazos, use o DJEN do escritório.",
     inputSchema: {
       consulta: z.string().default("").describe("Frase exata, como aparece na decisão, ex.: \"aposentadoria compulsória\". Pode ser \"\" se usar numero."),
@@ -311,7 +311,7 @@ server.registerTool(
       data_inicio: z.string().optional().describe("Data de publicação no DJEN, AAAA-MM-DD ou DD/MM/AAAA. Padrão: 180 dias atrás (com numero, sem limite)."),
       data_fim: z.string().optional().describe("AAAA-MM-DD ou DD/MM/AAAA. Padrão: hoje."),
       pagina: z.number().int().optional().describe("Padrão 1 (100 publicações por página, antes do filtro local)."),
-      completo: z.boolean().optional().describe("Só com numero: traz o texto integral, até o orçamento de caracteres."),
+      completo: z.boolean().optional().describe("Só com numero: traz o texto integral, até o orçamento de caracteres, e grava recibo local."),
     },
   },
   async (a) => texto(await tool("buscar_djen_trf1", buscarDjen)(a))

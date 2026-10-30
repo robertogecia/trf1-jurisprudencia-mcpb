@@ -258,7 +258,8 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
   - **A API do portal novo não é usada:** o `robots.txt` dele proíbe `/api/`.
   - **DJEN (v1.9.0):** `comunicaapi.pje.jus.br`, API pública do CNJ, sem restrição no `robots.txt`. `texto`
     é frase em ordem; operador vira erro de parâmetro, porque daria zero falso. A contagem para em 10.000, e
-    grau e sentença são filtros locais da página. Não grava recibo, porque o texto traz nomes de partes.
+    grau e sentença são filtros locais da página. A busca por tema não grava recibo, porque o texto traz nomes de
+    partes; `numero` + `completo=true` grava (origem `djen`, id `DJEN…`), para a citação ser conferida.
   - **Captcha nunca se contorna:** nem navegador automatizado, nem cookie copiado do navegador, nem
     captcha repassado ao usuário. Se aparecer, a resposta é `[PESQUISA NÃO REALIZADA]` e o TRF1/Colegiado
     não é tentado de novo por 30 minutos. Isso não pausa o disjuntor, que é compartilhado com a TNU.

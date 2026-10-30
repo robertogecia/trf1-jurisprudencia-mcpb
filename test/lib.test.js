@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.9.0");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.9.1");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -1797,4 +1797,44 @@ test("v1.9.0 DJEN: por número não limita a data e completo traz o texto integr
   const out = await lib.buscarDjen({ numero: "1001893-14.2024.4.01.4103", completo: true }, async (u, i) => { urls.push(String(u)); return base(u, i); }, env);
   assert.ok(urls[0].includes("numeroProcesso=10018931420244014103") && !urls[0].includes("dataDisponibilizacaoInicio"), urls[0]);
   assert.ok(out.includes("FIM DO TEXTO"));
+});
+
+test("v1.9.1 DJEN: só completo por número grava recibo; verificar confere por ele e não conclui ausência", async (t) => {
+  comEstadoLimpo(t);
+  lib._setCaptchaCjfParaTeste(0);
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const n = "1001893-14.2024.4.01.4103";
+  const frase = "a aposentadoria compulsória não afasta o direito adquirido do servidor";
+  const pub = respDjen([itemDjen({ id: 770585099, texto: `EMENTA. Decisão: ${frase}. Fim do documento.` })]);
+  await lib.buscarDjen({ numero: n }, pub, env);
+  assert.equal(fs.readdirSync(dir).length, 0);   // sem completo, nada grava
+  const o = await lib.buscarDjen({ numero: n, completo: true }, pub, env);
+  assert.ok(o.includes("origem djen") && o.includes("Id. do documento: DJEN770585099"), o.slice(0, 500));
+  const r = lib.lerRecibo("DJEN770585099", env);
+  assert.ok(r && r.origem === "djen" && r.nr_processo === lib.soDigitos(n) && r.base === "trf1" && r.url.includes("doc?x=1"));
+  const bom = await lib.verificarCitacao(n, frase, "trf1", async () => { throw new Error("não deveria ir à rede"); }, env);
+  assert.ok(bom.includes("✅") && bom.includes("do DJEN"), bom.slice(0, 300));
+  const xmlZero = '<partial-response><changes><update id="formulario"><![CDATA[<div>rowCount:0</div>]]></update></changes></partial-response>';
+  const f = async (url, init = {}) => {
+    if (!init.method || init.method === "GET") return new Response(ler("01_index.html"), { status: 200, headers: { "content-type": "text/html;charset=UTF-8" } });
+    if (/ckbAvancada/.test(String(init.body)) && !/actPesquisar/.test(String(init.body))) return respXml(ler("05_ckbavancada.xml"));
+    return respXml(xmlZero);
+  };
+  const mau = await lib.verificarCitacao(n, "frase que certamente não consta desta publicação do diário", "trf1", f, env);
+  assert.ok(mau.startsWith("[PESQUISA INCOMPLETA") && !mau.includes("❌ NÃO ENCONTRADO"), mau.slice(0, 300));
+});
+
+test("v1.9.1 mensagens: TNU não se diz portal do CJF; ❌ no TRF1 avisa o acervo", async (t) => {
+  comEstadoLimpo(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const f = async () => new Response(fs.readFileSync(path.join(fx, "14_tnu_eproc_busca.html")), { status: 200, headers: { "content-type": "text/html; charset=ISO-8859-1" } });
+  const b = await lib.buscar({ consulta: "aposentadoria", base: "tnu" }, f, env);
+  assert.ok(b.includes("no portal da TNU") && !b.includes("portal do CJF/TNU"), b.slice(0, 200));
+  const dir = env.TRF1_MCP_DIR_RECIBOS;
+  const d0 = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  assert.ok(lib.gravarRecibo(d0, env));
+  const v = await lib.verificarCitacao(d0.numero, "frase que certamente não consta de nenhum documento deste processo", "trf1", f, env);
+  assert.ok(v.includes("❌ NÃO ENCONTRADO") && v.includes("29/02/2024"), v.slice(-400));
+  assert.ok(dir);
 });
