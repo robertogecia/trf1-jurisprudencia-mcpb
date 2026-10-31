@@ -247,7 +247,10 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
   índice do portal (relator, turma, data) e, na TNU, o fecho. Só o dígito verificador inválido é 🔴; relator, turma ou data que divergem
   são 🟠 com os dois valores; ✅ só quando algo foi comparado e bateu. Relator só com o sobrenome confere se for o último sobrenome de
   UM relator entre os já lidos e não for comum ("Silva", "Oliveira"). Recibo do DJEN não confirma relator, turma nem data. Medido com
-  corpus cego (36 citações, 12 erros plantados por um agente que não viu o código): 12 de 12 sinalizados, 18 de 20 corretas com ✅.
+  quatro corpora cegos (144 citações, 48 erros plantados por agentes que não viram o código): 48 de 48 erros sinalizados e 77 de 79 corretas
+  com ✅ (as 2 restantes são sobrenomes comuns, "Oliveira" e "Rocha", que ficam 🟠 de propósito). Cuidado: o código foi ajustado olhando
+  esses corpora, e cada corpus novo, com redação diferente, achou defeitos que os anteriores não achavam; esses números não são uma medida
+  independente. A conferência de um julgamento nunca substitui ler o acórdão.
 
 - **Fontes (v1.8.0, 29/10/2026).** Em 28/10/2026 o CJF lançou um portal novo em `jurisprudencia.cjf.jus.br`
   e pôs captcha (F5, "Verificação de Segurança") no caminho antigo desse host. A extensão agora usa:

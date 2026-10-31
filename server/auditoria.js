@@ -105,8 +105,12 @@ const RE_CORTE_DURO = new RegExp(FRONTEIRA.source, "g");
 const ANTES_DE_CITACAO_NOVA = /(?:\b(?:e|ou|bem\s+como|ainda|também|além\s+d[oa]|tampouco|ao\s+passo\s+que|se\s+v[eê]|no\s+mesmo\s+sentido|em\s+sentido\s+(?:contr[áa]rio|diverso))\b[\s,]*(?:(?:de|em|do|da|no|na|o|a)\s+){0,2}|\d{4}[²³¹⁰-⁹]*\s*[,;.]?\s*(?:\[\^\d+\])?\s*)$/iu;
 // fim de frase: nota de rodapé "[^1]" ou data/parêntese seguidos de ponto e maiúscula ("Des. Fed." e "Rel. Des." não cortam)
 const RE_FIM_DE_FRASE = /\.\s*\[\^\d+\]\s*|(?<=\d{4})\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])|(?<=\))\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/gu;
+// marcadores de discurso que abrem uma NOVA citação, mesmo sem rótulo de classe ("…, ao passo que a Segunda Turma…", "no mesmo sentido, Terceira Seção…",
+// ", e Rel. Des. Fed. …"): o que vem depois é da citação seguinte (corpus cego 4, 31/10)
+const RE_MARCADOR_NOVA = /\b(?:ao\s+passo\s+que|no\s+mesmo\s+sentido|em\s+sentido\s+(?:contr[áa]rio|diverso)|em\s+igual\s+rumo|bem\s+como|tamb[ée]m\s+(?:de|em|por)\b|j[áa]\s+(?=(?:a\s+)?(?:\d{1,2}\s*[ªº]|(?:primeir|segund|terceir|quart|quint|sext|non|d[ée]cim)[ao]\b))|e\s+(?=(?:Rel\b|Relat|Des[\p{L}.]*\s|Ju[ií]z|Min\.|\d{1,2}\s*[ªº]|(?:Primeira|Segunda|Terceira|Quarta|Quinta|Sexta|Nona|D[ée]cima)\b)))/giu;
 function posicoesDeCorte(t) {
   const out = [...t.matchAll(RE_CORTE_DURO)].map((m) => m.index);
+  for (const m of t.matchAll(RE_MARCADOR_NOVA)) out.push(m.index);
   for (const m of t.matchAll(RE_FIM_DE_FRASE)) out.push(m.index);
   for (const m of t.matchAll(RE_ROTULO)) if (ANTES_DE_CITACAO_NOVA.test(t.slice(Math.max(0, m.index - 70), m.index))) out.push(m.index);
   return out.sort((a, b) => a - b);
