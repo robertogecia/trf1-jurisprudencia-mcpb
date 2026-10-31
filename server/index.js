@@ -9,6 +9,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { auditarCitacoes, listaDeLeitura } from "./auditoria.js";
 import {
   VERSAO,
   GRUPOS_MAX,
@@ -245,6 +246,41 @@ server.registerTool(
     try { t = buscarRecibos(a); } catch (e) { t = `BUSCA LOCAL NÃO REALIZADA — ${e.name}: ${e.message}`; }
     return texto(await comAvisos(t));
   }
+);
+
+server.registerTool(
+  "auditar_citacoes_trf1",
+  {
+    title: "Auditar as citações do TRF1/TNU de uma minuta (sem rede)",
+    description:
+      "Cole o texto da peça (ou o trecho com as citações) e receba, SEM REDE, uma linha por número de processo: 🔴 dígito verificador do CNJ que não confere; " +
+      "🟠 relator, turma ou data da peça que diverge do recibo local (ou não pôde ser conferida); 🟡 número da 1ª Região ainda não lido nesta máquina, ou lido sem nada a comparar; " +
+      "✅ o que a peça diz ao lado do número bate com o recibo lido; ⚪ de outro tribunal. Também lista os STJ/STF citados, sem conferi-los. " +
+      "A base é o ÍNDICE do portal (na base trf1 o fecho do voto não é exposto): ✅ nunca quer dizer que a citação está certa nem que o julgado sustenta a tese — " +
+      "só que o que a peça afirma ao lado do número não contradiz o recibo. Para a frase entre aspas, verificar_citacao_trf1. Escreva as notas no formato " +
+      "\"Rel. Des. Fulano de Tal, 9ª Turma, j. 19/02/2026\" para o relator, a turma e a data serem lidos.",
+    inputSchema: {
+      texto: z.string().describe("O texto da peça com as citações (até 400.000 caracteres)."),
+    },
+  },
+  async (a) => texto(await tool("auditar_citacoes_trf1", (x) => auditarCitacoes(x.texto))(a))
+);
+
+server.registerTool(
+  "lista_de_leitura_trf1",
+  {
+    title: "Lista de leitura: o que os acórdãos já lidos citam sobre um tema (sem rede)",
+    description:
+      "Para um TEMA (grupos de sinônimos, como em buscar_recibos_trf1), diz quais processos da Justiça Federal os acórdãos já lidos desta máquina mais citam e que ela ainda NÃO leu, " +
+      "ordenados por relatores distintos e depois por processos (muitos processos de um relator só costuma ser parágrafo-padrão do gabinete). SEM REDE. " +
+      "É candidato a ler, não leading case nem prova de vigência. Abra no máximo 3 por pesquisa, um por vez, com obter_decisao_trf1. Zero não é \"não localizado\".",
+    inputSchema: {
+      consulta: z.string().default("").describe("Palavras que devem aparecer todas."),
+      grupos: z.array(z.array(z.string())).optional().describe("Grupos de sinônimos (OU dentro do grupo, E entre grupos)."),
+      limite: z.number().int().optional().describe("Máximo de processos listados (padrão 10, teto 30)."),
+    },
+  },
+  async (a) => texto(await tool("lista_de_leitura_trf1", (x) => listaDeLeitura({ consulta: x.consulta, grupos: x.grupos ?? null, limite: x.limite ?? 10 }))(a))
 );
 
 server.registerTool(

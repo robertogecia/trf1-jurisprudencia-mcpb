@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.9.1");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.10.0");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -1837,4 +1837,155 @@ test("v1.9.1 mensagens: TNU não se diz portal do CJF; ❌ no TRF1 avisa o acerv
   const v = await lib.verificarCitacao(d0.numero, "frase que certamente não consta de nenhum documento deste processo", "trf1", f, env);
   assert.ok(v.includes("❌ NÃO ENCONTRADO") && v.includes("29/02/2024"), v.slice(-400));
   assert.ok(dir);
+});
+
+// ------------------------------------------------------------------ v1.10.0 auditoria e lista de leitura
+import * as aud from "../server/auditoria.js";
+
+// só as linhas de resultado: a legenda do cabeçalho cita ✅ e 🟠
+const A = (t, env) => aud.auditarCitacoes(t, env).split("\n").filter((l) => /^(🔴|🟠|🟡|✅|⚪) \d{7}-/u.test(l)).join("\n");
+
+test("v1.10.0 auditoria: dígito verificador, relator, turma e data; ✅ só quando algo bateu", (t) => {
+  const dir = pastaTmp(t);
+  const env = { TRF1_MCP_DIR_RECIBOS: dir };
+  const d0 = { ...docsDoFixture("02_busca_dano_moral.xml", "trf1")[0], numero: "1001893-14.2024.4.01.4103", numero_digitos: "10018931420244014103",
+    relator: "DESEMBARGADOR FEDERAL URBANO LEAL BERQUO NETO", orgao: "NONA TURMA", data_julgamento: "19/02/2026" };
+  assert.ok(lib.gravarRecibo(d0, env));
+  const cit = (resto) => `(TRF1, AC 1001893-14.2024.4.01.4103, ${resto})`;
+  const ok = A(cit("9ª Turma, Rel. Des. Fed. Urbano Leal Berquó Neto, j. 19/02/2026"), env);
+  assert.ok(ok.includes("✅ 1001893-14.2024.4.01.4103") && ok.includes("Bate com a peça, neste mesmo julgamento: relator, turma, data") && ok.includes("índice do portal"), ok);
+  assert.ok(!ok.includes("🟠") && !ok.includes("🔴"));
+  const rel = A(cit("9ª Turma, Rel. Des. Fed. Carlos Augusto Pires Brandão, j. 19/02/2026"), env);
+  assert.ok(rel.includes("🟠") && rel.includes("Carlos Augusto Pires Brandão") && rel.includes("URBANO LEAL"), rel);
+  const tur = A(cit("3ª Turma, Rel. Des. Fed. Urbano Leal Berquó Neto"), env);
+  assert.ok(tur.includes("🟠") && tur.includes("3ª Turma") && tur.includes("NONA TURMA"), tur);
+  const dat = A(cit("Rel. Des. Fed. Urbano Leal Berquó Neto, j. 10/05/2025"), env);
+  assert.ok(dat.includes("🟠") && dat.includes("10/05/2025") && dat.includes("19/02/2026"), dat);
+  const perto = A(cit("j. 21/02/2026"), env);
+  assert.ok(perto.includes("🟠") && perto.includes("2 dia(s) de diferença"), perto);
+  const nada = A("A matéria está em AC 1001893-14.2024.4.01.4103.", env);
+  assert.ok(nada.includes("🟡") && !nada.includes("✅ 1001893") && nada.includes("nada a comparar"), nada);
+  // nome único de relator nunca confere (sem a lista de relatores conhecidos)
+  const unico = A(cit("Rel. Des. Fed. Urbano"), env);
+  assert.ok(!unico.includes("✅ 1001893") && unico.includes("🟠"), unico);
+  const dv = A("PUIL 0011441-43.2015.4.03.6302", env);
+  assert.ok(dv.includes("🔴") && dv.includes("dígito verificador") && !dv.includes("✅"), dv);
+  const nl = A("AC 0000920-21.2010.4.01.3601, 5ª Turma", env);
+  assert.ok(nl.includes("🟡") && nl.includes("NÃO lido nesta máquina") && nl.includes("obter_decisao_trf1"), nl);
+  assert.ok(aud.auditarCitacoes("REsp 1.234.567 e 5001234-56.2020.8.22.0001", env).includes("REsp 1234567"));
+  assert.ok(aud.auditarCitacoes("sem número", env).includes("Nenhum número de processo"));
+  assert.ok(aud.auditarCitacoes("   ", env).startsWith("Cole o texto"));
+});
+
+test("v1.10.0 auditoria: recibo só do DJEN não confirma relator, turma nem data", (t) => {
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const n = "1001893-14.2024.4.01.4103";
+  assert.ok(lib.gravarReciboDjen({ id: "536441373", numero: n, tipo: "Intimação", classe: "APELAÇÃO CÍVEL", orgao: "Gab. 25", data: "23/02/2026", link: "https://pje2g.trf1.jus.br/x", texto: "Intimação do inteiro teor do acórdão." }, env));
+  const o = A(`AC ${n}, 9ª Turma, Rel. Des. Fed. Urbano Leal Berquó Neto, j. 19/02/2026`, env);
+  assert.ok(!o.includes("✅") && o.includes("publicação do DJEN") && o.includes("NÃO conferid"), o);
+});
+
+test("v1.10.0 comparador de relator e turmas", () => {
+  assert.equal(aud.compararRelator("Urbano Leal Berquó Neto", "DESEMBARGADOR FEDERAL URBANO LEAL BERQUO NETO"), "confere");
+  assert.equal(aud.compararRelator("Berquó Neto", "DESEMBARGADOR FEDERAL URBANO LEAL BERQUO NETO"), "ambiguo");   // sobrenome final "berquo" ≠ último nome sem agnome? confere só se o último coincide
+  assert.equal(aud.compararRelator("Carlos Augusto Pires Brandão", "URBANO LEAL BERQUO NETO"), "diverge");
+  assert.equal(aud.compararRelator("Urbano", "URBANO LEAL BERQUO NETO"), "ambiguo");
+  assert.equal(aud.compararRelator("", "X"), null);
+  assert.deepEqual(aud.unidadesDoTexto("9ª Turma"), ["9|turma"]);
+  assert.deepEqual(aud.unidadesDoTexto("NONA TURMA"), ["9|turma"]);
+  assert.deepEqual(aud.unidadesDoTexto("DÉCIMA-PRIMEIRA TURMA"), ["11|turma"]);
+  assert.deepEqual(aud.unidadesDoTexto("1ª TURMA RECURSAL DE SÃO PAULO"), ["1|recursal"]);
+  assert.deepEqual(aud.unidadesDoTexto("PRIMEIRA SEÇÃO"), ["1|secao"]);
+  assert.deepEqual(aud.unidadesDoTexto("TURMA NACIONAL DE UNIFORMIZAÇÃO"), ["tnu|tnu"]);
+});
+
+test("v1.10.0 lista de leitura: citados por vários relatores e não lidos; DV inválido fora", (t) => {
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const base = docsDoFixture("02_busca_dano_moral.xml", "trf1");
+  const citado = "0000920-21.2010.4.01.3601";
+  const mk = (i, rel, extra) => ({ ...base[i], id: `L${i}`, numero: `100000${i}-0${i}.2024.4.01.0000`, numero_digitos: `100000${i}0${i}20244010000`, relator: rel,
+    ementa: `Aposentadoria compulsória do servidor, na linha de ${citado}. ${extra || ""}`, decisao: "negaram provimento" });
+  // números com DV válido para os processos próprios não importam: o que interessa é o citado
+  const docs = [mk(1, "DESEMBARGADOR FEDERAL MARCOS ANTONIO LIMEIRA", ""), mk(2, "DESEMBARGADOR FEDERAL PAULO ROBERTO TAVARES", "")];
+  docs[1].ementa += " Veja também 5001234-56.2020.4.01.3601 (número errado).";
+  for (const d of docs) assert.ok(lib.gravarRecibo(d, env));
+  const out = aud.listaDeLeitura({ consulta: "aposentadoria compulsória" }, env);
+  assert.ok(out.includes(citado) && out.includes("citado em 2 processo(s) por 2 relator(es)"), out);
+  assert.ok(out.includes("DV inválido") && out.includes("5001234-56.2020.4.01.3601"), out);
+  assert.ok(aud.listaDeLeitura({ consulta: "tema que ninguém leu" }, env).includes("Nenhum acórdão lido"));
+  assert.ok(aud.listaDeLeitura({}, env).startsWith("Informe o tema"));
+});
+
+test("v1.10.0 relator: sobrenome único entre os lidos confere; comum ou ambíguo não; 'Rel.ª' é lido; relator ilegível é 🟠", (t) => {
+  const conh = [["urbano", "leal", "berquo"], ["paulo", "roberto", "parca", "pinho"], ["joao", "carlos", "cabrelon", "oliveira"], ["carlos", "augusto", "pires", "brandao"]];
+  assert.equal(aud.compararRelator("Berquó Neto", "DESEMBARGADOR FEDERAL URBANO LEAL BERQUO NETO", conh), "confere");
+  assert.equal(aud.compararRelator("Pinho", "PAULO ROBERTO PARCA DE PINHO", conh), "confere");
+  assert.equal(aud.compararRelator("Oliveira", "JOÃO CARLOS CABRELON DE OLIVEIRA", conh), "ambiguo");   // sobrenome comum
+  assert.equal(aud.compararRelator("Urbano", "DESEMBARGADOR FEDERAL URBANO LEAL BERQUO NETO", conh), "ambiguo");   // prenome nunca confere
+  assert.equal(aud.compararRelator("Pinho", "PAULO ROBERTO PARCA DE PINHO", []), "ambiguo");           // sem lista de conhecidos
+  assert.equal(aud.compararRelator("Pires", "CARLOS AUGUSTO PIRES BRANDAO", [...conh, ["pedro", "pires", "lima"]]), "ambiguo");   // dois relatores com o sobrenome
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const n = "1001893-14.2024.4.01.4103";
+  const d0 = { ...docsDoFixture("02_busca_dano_moral.xml", "trf1")[0], numero: n, numero_digitos: lib.soDigitos(n),
+    relator: "DESEMBARGADORA FEDERAL ROSANA NOYA ALVES WEIBEL KAUFMANN", orgao: "DÉCIMA-SEGUNDA TURMA", data_julgamento: "05/05/2025" };
+  assert.ok(lib.gravarRecibo(d0, env));
+  const errada = A(`RemNec ${n}, 12ª Turma, Rel.ª Des.ª Fed. Ana Carolina Alves Araujo Roman, j. 05/05/2025`, env);
+  assert.ok(errada.startsWith("🟠") && errada.includes("Ana Carolina Alves Araujo Roman"), errada);
+  const certa = A(`RemNec ${n}, 12ª Turma, Rel.ª Des.ª Fed. Rosana Noya Alves Weibel Kaufmann, j. 05/05/2025`, env);
+  assert.ok(certa.startsWith("✅") && certa.includes("relator, turma, data"), certa);
+  const ilegivel = A(`RemNec ${n}, Rel. desembargadora, j. 05/05/2025`, env);
+  assert.ok(ilegivel.startsWith("🟠") && ilegivel.includes("não pôde ser lido"), ilegivel);
+});
+
+test("v1.10.0 red team 31/10: ✅ só se UM mesmo julgamento bate em tudo; prenomes, 'relator' minúsculo, 'T.', Corte, data por extenso, número com espaço e contaminação", (t) => {
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const n = "1001893-14.2024.4.01.4103";
+  const base = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  const mk = (id, rel, orgao, data) => ({ ...base, id, numero: n, numero_digitos: lib.soDigitos(n), relator: rel, orgao, data_julgamento: data, tipo: "Acórdão" });
+  assert.ok(lib.gravarRecibo(mk("A1", "DESEMBARGADOR FEDERAL JOÃO BATISTA MOREIRA", "QUINTA TURMA", "05/05/2025"), env));
+  assert.ok(lib.gravarRecibo(mk("A2", "JUIZ FEDERAL PAULO GOMES", "OITAVA TURMA", "10/10/2025"), env));
+  // 1. campos de julgamentos diferentes: nenhum ✅
+  assert.ok(A(`AC ${n}, Rel. Juiz Fed. Paulo Gomes, 5ª Turma, j. 05/05/2025`, env).startsWith("🟠"));
+  // ...mas tudo de um mesmo julgamento: ✅
+  assert.ok(A(`AC ${n}, Rel. Des. Fed. João Batista Moreira, 5ª Turma, j. 05/05/2025`, env).startsWith("✅"));
+  // 2. só os prenomes: com UM só "João Batista" entre os relatores lidos confere (com a ressalva escrita); com dois, nunca
+  const unico = A(`AC ${n}, Rel. Des. Fed. João Batista, 5ª Turma`, env);
+  assert.ok(unico.startsWith("✅") && unico.includes("nome incompleto, único entre os relatores lidos"), unico);
+  assert.ok(lib.gravarRecibo({ ...mk("B1", "DESEMBARGADOR FEDERAL JOÃO BATISTA GOMES", "SEGUNDA TURMA", "01/03/2024"), numero: "2000002-00.2020.4.01.3400", numero_digitos: "20000020020204013400" }, env));
+  assert.ok(A(`AC ${n}, Rel. Des. Fed. João Batista, 5ª Turma`, env).startsWith("🟠"));
+  // 3. "relator"/"relatoria" minúsculo é lido (e, se ilegível, vira 🟠)
+  assert.ok(A(`AC ${n}, relator Des. Fed. Pedro Silva, 5ª Turma`, env).startsWith("🟠"));
+  assert.ok(A(`AC ${n}, de relatoria do Des. Fed. João Batista Moreira, 5ª Turma`, env).startsWith("✅"));
+  // 4. "9ª T." é lida: não passa como ✅ com a turma errada
+  const tAbrev = A(`AC ${n}, Rel. Des. Fed. João Batista Moreira, 9ª T., j. 05/05/2025`, env);
+  assert.ok(tAbrev.startsWith("🟠") && tAbrev.includes("9ª Turma"), tAbrev);
+  // 5. Corte Especial e TNU são lidas, nunca ignoradas
+  assert.ok(A(`AC ${n}, Corte Especial, j. 05/05/2025`, env).startsWith("🟠"));
+  assert.ok(A(`AC ${n}, TNU, j. 05/05/2025`, env).startsWith("🟠"));
+  assert.ok(A(`AC ${n}, Turma, j. 05/05/2025`, env).startsWith("🟠"));   // órgão mencionado e ilegível
+  // 6. data por extenso
+  assert.ok(A(`AC ${n}, 5ª Turma, julgado em 5 de maio de 2019`, env).startsWith("🟠"));
+  assert.ok(A(`AC ${n}, Rel. Des. Fed. João Batista Moreira, 5ª Turma, julgado em 5 de maio de 2025`, env).startsWith("✅"));
+  assert.ok(A(`AC ${n}, 5ª Turma, julgado em algum dia de 2025 (j. 5/m/2025)`, env).startsWith("🟠"));   // âncora de data sem data legível
+  // 7. dados de uma citação não contaminam a seguinte
+  const dois = A(`AC ${n}, Rel. Des. Fed. João Batista Moreira, 5ª Turma, j. 05/05/2025, e AC 1000524-49.2019.4.01.4300, 8ª Turma.`, env);
+  assert.ok(dois.split("\n").length === 2 && dois.startsWith("✅") && dois.includes("🟡"), dois);
+  // 8. número com espaço entre os blocos
+  assert.ok(A(`AC 1001893-14 .2024.4.01.4103, Rel. Des. Fed. João Batista Moreira, 5ª Turma`, env).startsWith("✅"));
+  // 10. caixa alta e "Rel. p/ acórdão"
+  assert.ok(A(`AC ${n}, Rel. DES. FED. JOÃO BATISTA MOREIRA, 5ª Turma`, env).startsWith("✅"));
+  assert.ok(A(`AC ${n}, Rel. p/ acórdão Des. Fed. João Batista Moreira, 5ª Turma`, env).startsWith("✅"));
+  // 11. data de publicação escrita: conferida ou apontada, nunca ignorada
+  const pub = A(`AC ${n}, 5ª Turma, DJe 01/01/2020`, env);
+  assert.ok(pub.startsWith("🟠") && pub.includes("publicad"), pub);
+});
+
+test("v1.10.0 lista de leitura: recibos sem relator não viram 'relatores distintos'", (t) => {
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const base = docsDoFixture("02_busca_dano_moral.xml", "trf1");
+  const citado = "0000920-21.2010.4.01.3601";
+  for (let i = 1; i <= 3; i++) assert.ok(lib.gravarRecibo({ ...base[i], id: `S${i}`, numero: `100000${i}-0${i}.2024.4.01.0000`, numero_digitos: `100000${i}0${i}20244010000`, relator: "",
+    ementa: `Aposentadoria compulsória, na linha de ${citado}.`, decisao: "negaram provimento" }, env));
+  const out = aud.listaDeLeitura({ consulta: "aposentadoria compulsória" }, env);
+  assert.ok(out.includes("por 0 relator(es) (+3 recibo(s) sem relator)"), out);
 });

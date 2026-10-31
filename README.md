@@ -212,7 +212,7 @@ mandar, baixa o instalador para a pasta Downloads (SHA-256 conferido); depois é
 
 ## Ferramentas
 
-Dez ferramentas: `buscar_djen_trf1` (publicações do DJEN: sentenças de 1º grau e acórdãos recentes), `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`
+Doze ferramentas: `auditar_citacoes_trf1` (cole a minuta e confira, sem rede, relator, turma e data de cada número contra o que já foi lido), `lista_de_leitura_trf1` (o que os acórdãos lidos de um tema mais citam e você ainda não leu), `buscar_djen_trf1`, `buscar_jurisprudencia_trf1`, `obter_decisao_trf1`
 (`modo="triagem"` para a leitura barata), `verificar_citacao_trf1`, `diagnostico_ritmo_trf1`
 (`relatorio=true` para o relatório do livro-razão de requisições) e, desde a v1.5.0, `buscar_recibos_trf1`
 (busca local, sem rede, nos recibos já gravados), `julgados_que_citam_trf1`, `linha_do_tempo_trf1`
@@ -242,6 +242,12 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
 ```
 
 ## Notas de implementação
+
+- **Auditoria de citações (v1.10.0).** `auditar_citacoes_trf1` não é a do TJRO: o TRF1 não expõe o fecho do voto, então a base é o
+  índice do portal (relator, turma, data) e, na TNU, o fecho. Só o dígito verificador inválido é 🔴; relator, turma ou data que divergem
+  são 🟠 com os dois valores; ✅ só quando algo foi comparado e bateu. Relator só com o sobrenome confere se for o último sobrenome de
+  UM relator entre os já lidos e não for comum ("Silva", "Oliveira"). Recibo do DJEN não confirma relator, turma nem data. Medido com
+  corpus cego (36 citações, 12 erros plantados por um agente que não viu o código): 12 de 12 sinalizados, 18 de 20 corretas com ✅.
 
 - **Fontes (v1.8.0, 29/10/2026).** Em 28/10/2026 o CJF lançou um portal novo em `jurisprudencia.cjf.jus.br`
   e pôs captcha (F5, "Verificação de Segurança") no caminho antigo desse host. A extensão agora usa:

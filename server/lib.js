@@ -17,7 +17,7 @@ import { checarSemanal } from "./semana.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.9.1";
+export const VERSAO = "1.10.0";
 // v1.8.0: o repositório Python (trf1-jurisprudencia-mcp) está arquivado e não aceita issue; relato e User-Agent apontam o atual.
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcpb";
 
