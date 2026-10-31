@@ -2018,13 +2018,13 @@ test("v1.10.0 corpus cego 31/10: 'Relatado pelo…', rótulo de classe só corta
 test("v1.10.0 corpus cego 4: 'ao passo que', 'no mesmo sentido' e ', e Rel.' abrem nova citação", (t) => {
   const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
   const base = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
-  const mk = (id, n, rel, orgao, data) => ({ ...base, id, numero: n, numero_digitos: lib.soDigitos(n), relator: rel, orgao, data_julgamento: data, tipo: "Acórdão" });
+  const mk = (id, n, rel, orgao, data) => ({ ...base, id, numero: n, numero_digitos: lib.soDigitos(n), relator: rel, orgao, data_julgamento: data, data_publicacao: data, tipo: "Acórdão" });
   const N1 = "1003102-37.2017.4.01.3400", N2 = "1027298-18.2019.4.01.0000", N3 = "1002744-72.2017.4.01.3400", N4 = "1040751-70.2025.4.01.0000", N5 = "1030446-66.2021.4.01.0000";
   for (const d of [mk("D1", N1, "DESEMBARGADOR FEDERAL EDUARDO MORAIS DA ROCHA", "PRIMEIRA TURMA", "03/10/2023"), mk("D2", N2, "DESEMBARGADOR FEDERAL FLAVIO JARDIM", "TERCEIRA SEÇÃO", "05/10/2025"),
     mk("D3", N3, "DESEMBARGADOR FEDERAL LUIS GUSTAVO SOARES AMORIM DE SOUSA", "PRIMEIRA TURMA", "09/12/2024"), mk("D4", N4, "DESEMBARGADORA FEDERAL CANDICE LAVOCAT GALVAO JOBIM", "PRIMEIRA SEÇÃO", "01/12/2025"),
     mk("D5", N5, "DESEMBARGADOR FEDERAL PEDRO BRAGA FILHO", "DECIMA TERCEIRA TURMA", "12/02/2026")]) assert.ok(lib.gravarRecibo(d, env));
   const tudoOk = (txt) => { const o = A(txt, env).split("\n"); assert.ok(o.every((l) => l.startsWith("✅")), o.join("\n")); };
-  tudoOk(`conforme o voto condutor do Des. Fed. Eduardo Morais da Rocha, Primeira Turma, na AC nº ${N1}, j. 03.10.2023, ao passo que a Segunda Turma já assentou o contrário, como se vê de Rel. Des. Fed. Pedro Braga Filho, 13ª T., AC ${N5}, DJe 12/02/2026.`);
+  tudoOk(`conforme o voto condutor do Des. Fed. Eduardo Morais da Rocha, Primeira Turma, na AC nº ${N1}, j. 03.10.2023, ao passo que a outra corte já assentou o contrário, como se vê de Rel. Des. Fed. Pedro Braga Filho, 13ª T., AC ${N5}, DJe 12/02/2026.`);
   tudoOk(`no mesmo sentido, Terceira Seção, Rel. Des. Fed. FLÁVIO JARDIM, nº ${N2}, j. 05/10/2025, e Rel. Des. Fed. Luis Gustavo Soares Amorim de Sousa, Primeira Turma, AC ${N3}, DJe 09.12.2024.`);
   tudoOk(`a Corte em Primeira Seção, da lavra da Desa. Fed. Candice Lavocat Galvão Jobim, nº ${N4}, j. 01/12/2025 ao passo que 13ª Turma, Rel. Des. Fed. Pedro Braga Filho, nº ${N5}, DJe 12/02/2026.`);
 });
