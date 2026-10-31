@@ -71,16 +71,20 @@ export function unidadesDoTexto(txt) {
   if (/corte\s+especial/iu.test(t)) out.add("corte|corte");
   return [...out];
 }
+const NOME = String.raw`(?:\p{Lu}[\p{L}'’-]*|\b(?:de|da|do|dos|das|e)\b)(?:\s+(?:\p{Lu}[\p{L}'’-]*|(?:de|da|do|dos|das|e))){0,6}`;
+// nome com título (Des. Fed., Desa., Juiz Federal, Min.) sem "Rel.": "Presidência da TNU, Min. Raul Araújo", "Des. Fed. Fulano" — vale como relator candidato
+const RE_TITULADO = new RegExp(String.raw`(?<![\p{L}])(?:Des[\p{L}.]*\s*(?:Fed[\p{L}.]*\s*)?|DES[\p{L}.]*\s*(?:FED[\p{L}.]*\s*)?|Ju[ií]z[a]?\s*(?:Federal\s*)?|JU[IÍ]Z[A]?\s*(?:FEDERAL\s*)?|Min[\p{L}.]*\s*|MIN[\p{L}.]*\s*)(?:Convocad[oa]\s*)?(${NOME})`, "gu");
 const RE_MENCIONA_ORGAO = /(?<![\p{L}])(?:Turma|Se[çc][ãa]o|Corte)(?![\p{L}])/u;
 
 // ------------------------------------------------------------------ o que a peça diz ao lado do número
-const NOME = String.raw`(?:\p{Lu}[\p{L}'’-]*|\b(?:de|da|do|dos|das|e)\b)(?:\s+(?:\p{Lu}[\p{L}'’-]*|(?:de|da|do|dos|das|e))){0,6}`;
-const RE_REL = new RegExp(String.raw`(?<![\p{L}])(?:[Rr]el(?:ator(?:a)?|atoria(?:\s+d[oa])?|\.|a\.)?|REL(?:ATOR(?:A)?|\.)?)[ªº]?\.?(?![\p{L}])\s*(?:p\/\s*(?:o\s*)?ac[óo]rd[ãa]o\s*)?(?:\(a\))?\s*:?\s*(?:(?:Des|DES|Juiz|JUIZ|Juíza|JUÍZA|Min|MIN)[\p{L}.]*\s*(?:(?:Fed|FED)[\p{L}.]*)?\s*(?:(?:Convocad|CONVOCAD)[oOaA])?\s*(?:\(a\))?\s*)?(${NOME})`, "gu");
-const RE_MENCIONA_REL = /(?<![\p{L}])(?:[Rr]el(?:ator(?:a)?|atoria(?=\s+d[oa](?![\p{L}]))|\.|a\.)?|REL(?:ATOR(?:A)?|\.)?)[ªº]?(?![\p{L}])/u;   // "a relatoria divergente" não é menção a relator
+const PREFIXO_REL = String.raw`(?:[Rr]el(?:ator(?:a)?|atoria(?:\s+d[oa])?|\.|a\.)?|REL(?:ATOR(?:A)?|\.)?|[Rr]elatad[oa]\s+pel[oa]|[Vv]oto\s+condutor\s+d[oa]|(?:[Dd]a\s+)?[Ll]avra\s+d[oa]|[Dd]e\s+autoria\s+d[oa])`;
+const RE_REL = new RegExp(String.raw`(?<![\p{L}])${PREFIXO_REL}[ªº]?\.?(?![\p{L}])\s*(?:p\/\s*(?:o\s*)?ac[óo]rd[ãa]o\s*)?(?:\(a\))?\s*:?\s*(?:(?:Des|DES|Juiz|JUIZ|Juíza|JUÍZA|Min|MIN)[\p{L}.]*\s*(?:(?:Fed|FED)[\p{L}.]*)?\s*(?:(?:Convocad|CONVOCAD)[oOaA])?\s*(?:\(a\))?\s*)?(${NOME})`, "gu");
+const RE_MENCIONA_REL = /(?<![\p{L}])(?:[Rr]el(?:ator(?:a)?|atoria(?=\s+d[oa](?![\p{L}]))|\.|a\.)?|REL(?:ATOR(?:A)?|\.)?|[Rr]elatad[oa]|[Vv]oto\s+condutor|[Ll]avra\s+d[oa]|[Dd]e\s+autoria\s+d[oa])[ªº]?(?![\p{L}])/u;   // "a relatoria divergente" não é menção a relator
 const ANCORA_JULG = String.raw`(?:\bj(?:ulgad[oa])?\.?|julgamento\s*(?:em|:)|data\s+(?:do|de)\s+julgamento\s*:?|sess[ãa]o\s+(?:de|em|do\s+dia))\s*(?:em\s*)?`;
 const RE_DATA = new RegExp(ANCORA_JULG + String.raw`(\d{1,2})[./](\d{1,2})[./](\d{2,4})`, "giu");
 const MESES = ["janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const RE_DATA_EXT = new RegExp(ANCORA_JULG + String.raw`(\d{1,2})\s*º?\s+de\s+(janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})`, "giu");
+const RE_DATA_EM_EXT = /(?<![\p{L}])em\s+(\d{1,2})\s*º?\s+de\s+(janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/giu;
 const RE_ANCORA_SEM_DATA = new RegExp(ANCORA_JULG + String.raw`\d`, "iu");
 const RE_PUB = /(?:\bDJ[eE]?N?\b|publicad[oa]|publica[çc][ãa]o)[^\d\n]{0,25}(\d{1,2})[./](\d{1,2})[./](\d{2,4})/giu;
 const FRONTEIRA = /\n|;\s|(?<![A-Za-z])(?:STJ|STF|TST|TJ-?[A-Z]{2})\b|\b(?:REsp|AREsp|EREsp|EAREsp|AgInt|AgRg|EDcl)\b/;
@@ -91,12 +95,27 @@ const RE_NUM = /(?<![0-9])(\d{7})\s?-?\s?(\d{2})\s?\.?\s?(\d{4})\s?\.?\s?(\d)\s?
 
 /** Cada dado da peça (relator, turma, data) é atribuído ao número de processo MAIS PRÓXIMO dentro do mesmo trecho (limitado por quebra de linha,
  *  "; " e começo de citação a STJ/STF): janelas fixas faziam o relator de uma citação cair na vizinha (red team e corpus cego, 31/10). */
-const RE_CORTE = new RegExp(FRONTEIRA.source, "g");
+// O rótulo de classe ("AC nº", "Apelação nº", "CC nº", "PUIL", "AI") abre uma NOVA citação: o que vem antes dele não é dela. "processo nº" não corta
+// (pode ser "Relatado pelo Des. X no processo nº N", com o relator antes do número).
+const ROTULO_CLASSE = String.raw`\b(?:(?:AC|AI|AG|AMS|REOMS|ACR|ApCiv|RemNec|ReeNec|HC|MS|CC|PUIL|PEDILEF|RCL)|(?:Apela[çc][ãa]o(?:\s+(?:C[íi]vel|Criminal))?|Agravo(?:\s+de\s+Instrumento)?|Pedido\s+de\s+Uniformiza[çc][ãa]o|Remessa\s+Necess[áa]ria|Conflito\s+de\s+Compet[êe]ncia|Mandado\s+de\s+Seguran[çc]a|Embargos\s+de\s+Declara[çc][ãa]o))\b\s*(?:n[º°o.]*\s*)?(?=\d{7})`;
+const RE_ROTULO = new RegExp(ROTULO_CLASSE, "giu");
+const RE_CORTE_DURO = new RegExp(FRONTEIRA.source, "g");
+// o rótulo só abre citação nova depois de conjunção ("e também em AC…", "ao passo que se vê Apelação…") ou de uma data que fecha a anterior;
+// em "Rel. X, 9ª Turma, Apelação Cível nº N" os dados vêm ANTES do rótulo e são desta citação (corpus cego 2, 31/10)
+const ANTES_DE_CITACAO_NOVA = /(?:\b(?:e|ou|bem\s+como|ainda|também|além\s+d[oa]|tampouco|ao\s+passo\s+que|se\s+v[eê]|no\s+mesmo\s+sentido|em\s+sentido\s+(?:contr[áa]rio|diverso))\b[\s,]*(?:(?:de|em|do|da|no|na|o|a)\s+){0,2}|\d{4}[²³¹⁰-⁹]*\s*[,;.]?\s*(?:\[\^\d+\])?\s*)$/iu;
+// fim de frase: nota de rodapé "[^1]" ou data/parêntese seguidos de ponto e maiúscula ("Des. Fed." e "Rel. Des." não cortam)
+const RE_FIM_DE_FRASE = /\.\s*\[\^\d+\]\s*|(?<=\d{4})\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])|(?<=\))\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/gu;
+function posicoesDeCorte(t) {
+  const out = [...t.matchAll(RE_CORTE_DURO)].map((m) => m.index);
+  for (const m of t.matchAll(RE_FIM_DE_FRASE)) out.push(m.index);
+  for (const m of t.matchAll(RE_ROTULO)) if (ANTES_DE_CITACAO_NOVA.test(t.slice(Math.max(0, m.index - 70), m.index))) out.push(m.index);
+  return out.sort((a, b) => a - b);
+}
 function ocorrencias(t) {
   const marcas = [...t.matchAll(RE_NUM)].map((m) => ({ d: m.slice(1, 7).join(""), ini: m.index, fim: m.index + m[0].length,
     relatores: new Set(), datas: new Set(), pubs: new Set(), unidades: new Set(), relatorNaoLido: false, orgaoNaoLido: false, dataNaoLida: false }));
   if (!marcas.length) return [];
-  const cortes = [...t.matchAll(RE_CORTE)].map((m) => m.index).sort((a, b) => a - b);
+  const cortes = posicoesDeCorte(t);
   const trecho = (pos) => { let k = 0; while (k < cortes.length && cortes[k] < pos) k++; return k; };
   marcas.forEach((m) => { m.seg = trecho(m.ini); });
   const MAX_DEPOIS = 260, MAX_ANTES = 120;
@@ -114,6 +133,11 @@ function ocorrencias(t) {
   const dentroDeNumero = (pos) => marcas.some((m) => pos >= m.ini && pos < m.fim);
   const parsedDatas = [];
   for (const m of t.matchAll(RE_REL)) { const n = m[1].trim(); if (!nomesDoRelator(n).length) continue; const o = dono(m.index, m.index + m[0].length); if (o) o.relatores.add(n); }
+  for (const m of t.matchAll(RE_TITULADO)) { const n = m[1].trim(); if (!nomesDoRelator(n).length) continue; const o = dono(m.index, m.index + m[0].length); if (o) o.relatores.add(n); }
+  for (const m of t.matchAll(RE_DATA_EM_EXT)) {
+    if (/(?:publicad[oa]|disponibiliz\w*|\bDJ[eE]?N?\b|juntad[oa]|protocolad[oa]|lid[oa]|acessad[oa]|consultad[oa])\s*$/iu.test(t.slice(Math.max(0, m.index - 25), m.index))) continue;
+    parsedDatas.push(m.index); const o = dono(m.index, m.index + m[0].length); if (o) o.datas.add(diaDe(m[1], MESES.indexOf(fold(m[2])) + 1, m[3]));
+  }
   for (const m of t.matchAll(RE_DATA)) { parsedDatas.push(m.index); const o = dono(m.index, m.index + m[0].length); if (o) o.datas.add(diaDe(m[1], m[2], m[3])); }
   for (const m of t.matchAll(RE_DATA_EXT)) { parsedDatas.push(m.index); const o = dono(m.index, m.index + m[0].length); if (o) o.datas.add(diaDe(m[1], MESES.indexOf(fold(m[2])) + 1, m[3])); }
   for (const m of t.matchAll(RE_PUB)) { const o = dono(m.index, m.index + m[0].length); if (o) o.pubs.add(diaDe(m[1], m[2], m[3])); }

@@ -1989,3 +1989,28 @@ test("v1.10.0 lista de leitura: recibos sem relator não viram 'relatores distin
   const out = aud.listaDeLeitura({ consulta: "aposentadoria compulsória" }, env);
   assert.ok(out.includes("por 0 relator(es) (+3 recibo(s) sem relator)"), out);
 });
+
+test("v1.10.0 corpus cego 31/10: 'Relatado pelo…', rótulo de classe só corta depois de conjunção, TJ e fim de frase isolam a citação", (t) => {
+  const env = { TRF1_MCP_DIR_RECIBOS: pastaTmp(t) };
+  const base = docsDoFixture("02_busca_dano_moral.xml", "trf1")[0];
+  const mk = (id, n, rel, orgao, data) => ({ ...base, id, numero: n, numero_digitos: lib.soDigitos(n), relator: rel, orgao, data_julgamento: data, data_publicacao: data, tipo: "Acórdão" });
+  const N1 = "1002249-04.2026.4.01.9999", N2 = "1000775-22.2018.4.01.4100", N3 = "0002515-81.2008.4.01.4100", N4 = "1006385-97.2020.4.01.4100", N5 = "1007021-58.2022.4.01.3400";
+  for (const d of [mk("C1", N1, "DESEMBARGADOR FEDERAL URBANO LEAL BERQUO NETO", "NONA TURMA", "24/03/2026"), mk("C2", N2, "DESEMBARGADOR FEDERAL ROSIMAYRE GONCALVES DE CASTRO", "NONA TURMA", "25/06/2025"),
+    mk("C3", N3, "DESEMBARGADOR FEDERAL MORAIS DA ROCHA", "SEGUNDA TURMA", "14/09/2024"), mk("C4", N4, "DESEMBARGADOR FEDERAL EULER DE ALMEIDA SILVA JUNIOR", "NONA TURMA", "27/09/2024"),
+    mk("C5", N5, "DESEMBARGADOR FEDERAL NEVITON GUEDES", "NONA TURMA", "30/10/2023")]) assert.ok(lib.gravarRecibo(d, env));
+  // "Relatado pelo": o relator vem antes do número e é comparado (errado = 🟠; certo = ✅)
+  assert.ok(A(`Relatado pelo Des. Fed. Néviton Guedes no processo nº ${N3}, Segunda Turma, em 14 de setembro de 2024`, env).startsWith("🟠"));
+  assert.ok(A(`Relatado pelo Des. Fed. Morais da Rocha no processo nº ${N3}, Segunda Turma, em 14 de setembro de 2024`, env).startsWith("✅"));
+  // citações encadeadas por conjunção: a data de uma não vai para a seguinte
+  const enc = A(`Apelação Cível ${N1}, voto condutor do Des. Fed. Urbano Leal Berquó Neto, Nona Turma, DJe 24/03/2026, e também em AC ${N2}, 9ª T., Rel. Des. Fed. Rosimayre Gonçalves, j. 25.06.2025`, env);
+  assert.equal(enc.split("\n").length, 2); assert.ok(enc.split("\n").every((l) => l.startsWith("✅")), enc);
+  // relator e turma ANTES do rótulo de classe pertencem a esta citação
+  assert.ok(A(`Rel. Des. Fed. Néviton Guedes, 9ª Turma, Apelação Cível nº ${N5}, julgado em 30/10/2023`, env).startsWith("✅"));
+  assert.ok(A(`Rel. Des. Fed. Urbano Leal Berquó Neto, Sexta Turma, na AC nº ${N5}, j. 30/10/2023`, env).startsWith("🟠"));
+  // citação de TJ logo depois não empresta o relator
+  assert.ok(A(`Processo ${N4}, relator Des. Fed. Euler de Almeida Silva Júnior, Nona Turma, j. 27 de setembro de 2024. Em sentido contrário, TJMG, Apelação Cível 1.0000.21.123456-7/001, Rel. Des. Marcos Lincoln, 11ª Câmara Cível.`, env).startsWith("✅"));
+  // fim de frase com nota de rodapé isola a seção da frase seguinte
+  assert.ok(A(`Apelação nº ${N1}, da lavra do Des. Fed. Urbano Leal Berquó Neto, Nona Turma, DJe 24/03/2026.[^1] A Primeira Seção, por sua vez, fixou a competência no CC nº ${N2}, Primeira Seção, j. 25.06.2025`, env).split("\n")[0].startsWith("✅"));
+  // "a relatoria divergente" não é menção a relator
+  assert.ok(A(`Candice Jobim, Desa. Fed., Primeira Seção – ${N1}, 24/03/2026. Por fim, a relatoria divergente é isolada: ${N2}`, env).includes("🟡"));
+});
