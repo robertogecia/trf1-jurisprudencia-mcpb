@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.10.0");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.10.1");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -2027,4 +2027,12 @@ test("v1.10.0 corpus cego 4: 'ao passo que', 'no mesmo sentido' e ', e Rel.' abr
   tudoOk(`conforme o voto condutor do Des. Fed. Eduardo Morais da Rocha, Primeira Turma, na AC nº ${N1}, j. 03.10.2023, ao passo que a outra corte já assentou o contrário, como se vê de Rel. Des. Fed. Pedro Braga Filho, 13ª T., AC ${N5}, DJe 12/02/2026.`);
   tudoOk(`no mesmo sentido, Terceira Seção, Rel. Des. Fed. FLÁVIO JARDIM, nº ${N2}, j. 05/10/2025, e Rel. Des. Fed. Luis Gustavo Soares Amorim de Sousa, Primeira Turma, AC ${N3}, DJe 09.12.2024.`);
   tudoOk(`a Corte em Primeira Seção, da lavra da Desa. Fed. Candice Lavocat Galvão Jobim, nº ${N4}, j. 01/12/2025 ao passo que 13ª Turma, Rel. Des. Fed. Pedro Braga Filho, nº ${N5}, DJe 12/02/2026.`);
+});
+
+test("v1.10.1: o 🟡 de processo da 1ª Região sem recibo aponta o JusRatio para julgado posterior a 29/02/2024", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trf1-aud-"));
+  const out = aud.auditarCitacoes("TRF1, 1023235-47.2024.4.01.9999, Nona Turma.", { TRF1_MCP_DIR_RECIBOS: dir });
+  assert.match(out, /🟡 1023235-47\.2024\.4\.01\.9999/);
+  assert.match(out, /JusRatio/);
+  assert.match(out, /buscar_djen_trf1/);
 });

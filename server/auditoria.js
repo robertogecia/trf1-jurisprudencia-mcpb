@@ -227,7 +227,7 @@ export function auditarCitacoes(texto, env = process.env) {
     if (!dvCnjValido(d)) { cont.vermelho++; L.push(`🔴 ${num} — dígito verificador NÃO confere: número digitado errado ou inexistente. Não o use em consulta; corrija pela fonte.`); continue; }
     const rs = recibos.filter((r) => soDigitos(r.nr_processo) === d);
     if (!rs.length) {
-      if (d[13] === "4" && d.slice(14, 16) === "01") { cont.amarelo++; L.push(`🟡 ${num} — Justiça Federal da 1ª Região, número válido, NÃO lido nesta máquina: abra com obter_decisao_trf1 (ou buscar_djen_trf1, se for posterior a 29/02/2024) antes de citar; relator, turma e data não foram conferidos.`); }
+      if (d[13] === "4" && d.slice(14, 16) === "01") { cont.amarelo++; L.push(`🟡 ${num} — Justiça Federal da 1ª Região, número válido, NÃO lido nesta máquina: abra com obter_decisao_trf1 antes de citar (julgado até 29/02/2024). Se for posterior, o acórdão de 2º grau se confere no JusRatio (tribunais=[\"TRF1\"]) e a sentença ou publicação em buscar_djen_trf1; julgado do JusRatio não deixa recibo aqui, então esta ferramenta continua dando 🟡 para ele. Relator, turma e data não foram conferidos.`); }
       else if (d[13] === "4") { cont.outro++; L.push(`⚪ ${num} — segmento .${seg}. (outra região da Justiça Federal; também é o número de ORIGEM de julgados da TNU): se a peça cita acórdão da TNU, abra com obter_decisao_trf1 base="tnu"; se for de outro TRF, confira no tribunal respectivo.`); }
       else { cont.outro++; L.push(`⚪ ${num} — de outro ramo ou tribunal (segmento .${seg}.): confira no motor daquele tribunal.`); }
       continue;
