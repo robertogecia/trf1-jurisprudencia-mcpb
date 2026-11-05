@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.10.1");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.10.2");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -2035,4 +2035,43 @@ test("v1.10.1: o 🟡 de processo da 1ª Região sem recibo aponta o JusRatio pa
   assert.match(out, /🟡 1023235-47\.2024\.4\.01\.9999/);
   assert.match(out, /JusRatio/);
   assert.match(out, /buscar_djen_trf1/);
+});
+
+function envT1102(t) {
+  const arqOrig = lib._arquivoEstadoAtual();
+  lib._setArquivoEstadoParaTeste(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-1102-")), "estado.json"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trf1-mcpb-recibos-"));
+  t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); fs.rmSync(dir, { recursive: true, force: true }); });
+  lib._resetDisjuntorParaTeste();
+  return { TRF1_MCP_DIR_RECIBOS: dir, TRF1_MCP_PAUSA_REABERTURA_MS: "0" };
+}
+const MANUTENCAO = '<html><head><title>Manutenção programada</title><script>var x="a";</script></head><body><h1>Estamos em manutenção</h1></body></html>';
+
+test("v1.10.2: página inicial inesperada na 1ª tentativa -> segunda tentativa com sessão nova resolve", async (t) => {
+  const env = envT1102(t);
+  const base = portalFalso();
+  let gets = 0;
+  const f = async (url, init = {}) => {
+    const get = !init.method || init.method === "GET";
+    if (get && ++gets === 1) return new Response(MANUTENCAO, { status: 200, headers: { "content-type": "text/html" } });
+    return base(url, init);
+  };
+  const out = await lib.buscar({ consulta: "dano moral" }, f, env);
+  assert.ok(!out.startsWith("[PESQUISA NÃO REALIZADA"), out.slice(0, 300));
+  assert.equal(gets, 2);
+});
+
+test("v1.10.2: falha persistente tenta só duas vezes e grava a evidência (content-type sem aspas, título, início)", async (t) => {
+  const env = envT1102(t);
+  let gets = 0;
+  const f = async () => { gets++; return new Response(MANUTENCAO, { status: 200, headers: { "content-type": "text/html;charset=UTF-8" } }); };
+  const out = await lib.buscar({ consulta: "dano moral" }, f, env);
+  assert.ok(out.startsWith("[PESQUISA NÃO REALIZADA"), out.slice(0, 300));
+  assert.equal(gets, 2);
+  assert.match(out, /content-type=text\/html;charset=utf-8/);
+  assert.match(out, /título=Manutenção programada/);
+  assert.match(out, /início=.*Estamos em manutenção/);
+  assert.ok(!out.includes("var x"), "script não entra no início");
+  // e sobrevive à sanitização do diário
+  assert.match(lib.sanitizar(out), /content-type=text\/html/);
 });

@@ -17,7 +17,7 @@ import { checarSemanal } from "./semana.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.10.1";
+export const VERSAO = "1.10.2";
 // v1.8.0: o repositório Python (trf1-jurisprudencia-mcp) está arquivado e não aceita issue; relato e User-Agent apontam o atual.
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcpb";
 
@@ -2473,6 +2473,20 @@ export function captchaCjfRecente(agora = Date.now()) {
   return captchaCjfEm > 0 && agora - captchaCjfEm < CAPTCHA_CJF_MS;
 }
 
+// v1.10.2: o content-type saía como «…» no diário porque sanitizar() troca tudo entre aspas por «…». Agora vai sem aspas, com o
+// tamanho, o título e o início da página recebida — só quando a página é a do formulário (GET sem dado do usuário), para dizer
+// QUE página o portal devolveu no lugar dela (desafio, manutenção, sessão) sem pôr texto de busca no diário.
+function evidenciaDaPagina(ctype, texto, esperado) {
+  const t = String(texto || "");
+  let r = `content-type=${String(ctype || "(vazio)").replace(/["'“”]/g, "").slice(0, 60)}; tamanho=${t.length}`;
+  if (esperado === "html") {
+    const limpa = (x, n) => String(x || "").replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/["'“”]/g, "").replace(/\s+/g, " ").trim().slice(0, n);
+    const titulo = limpa((/<title[^>]*>([\s\S]{0,200}?)<\/title>/i.exec(t) || [])[1], 80);
+    r += `; título=${titulo || "(sem)"}; início=${limpa(t.slice(0, 4000), 140) || "(vazio)"}`;
+  }
+  return r;
+}
+
 function diagnosticarResposta(status, ctype, texto, esperado) {
   if (ehDesafioNavegador(texto || "")) {
     return `o portal devolveu um DESAFIO DE NAVEGADOR (Cloudflare/F5, HTTP ${status}) em vez da resposta. Isso não é bloqueio por volume e não se contorna (nem por proxy, User-Agent ou cookie): teste outra rede, use o portal no navegador e, se persistir, informe o suporte do portal.`;
@@ -2481,7 +2495,7 @@ function diagnosticarResposta(status, ctype, texto, esperado) {
     return `o portal recusou a consulta com uma página de bloqueio anti-robô (HTTP ${status}). Costuma ser temporário — a ferramenta pausa e o portal segue acessível no navegador.`;
   }
   if (RE_SESSAO_EXPIRADA.test(texto || "")) return "A sessão do portal expirou (ViewState); a ferramenta vai reabrir a sessão.";
-  return `O portal respondeu algo inesperado (esperava ${esperado}; veio HTTP ${status}, content-type=${JSON.stringify(ctype)}). Pode ser instabilidade temporária do CJF — tente de novo em instantes.`;
+  return `O portal respondeu algo inesperado (esperava ${esperado}; veio HTTP ${status}, ${evidenciaDaPagina(ctype, texto, esperado === "a página do formulário" ? "html" : "")}). Pode ser instabilidade temporária do CJF — tente de novo em instantes.`;
 }
 
 // Cookie jar simples por sessão (Node fetch não persiste cookies entre requisições).
@@ -2652,8 +2666,19 @@ export async function consultarPortal(consulta, tipos, fontes, pagina, porPagina
 
   async function umaSessao() {
     const avisos = [];
-    const jar = new CookieJar();
-    const inicial = await requisitar(jar, "GET", endpoint, operacao, { esperado: "html" }, fetchImpl, env);
+    let jar = new CookieJar();
+    // v1.10.2: relato de falha intermitente na PRIMEIRA requisição depois de ociosidade (HTTP 200 sem a página do formulário).
+    // Causa não confirmada; uma única segunda tentativa, com sessão nova e pausa curta, só para a resposta "inesperada" da página
+    // inicial — desafio, bloqueio e captcha continuam sem repetição (não se insiste nem se contorna).
+    let inicial;
+    try {
+      inicial = await requisitar(jar, "GET", endpoint, operacao, { esperado: "html" }, fetchImpl, env);
+    } catch (e) {
+      if (e?.constructor !== PesquisaNaoRealizada || !/^O portal respondeu algo inesperado/.test(String(e.message))) throw e;
+      await new Promise((ok) => setTimeout(ok, Number(env.TRF1_MCP_PAUSA_REABERTURA_MS ?? 2500)));
+      jar = new CookieJar();
+      inicial = await requisitar(jar, "GET", endpoint, operacao, { esperado: "html" }, fetchImpl, env);
+    }
     let viewstate = extrairViewstate(inicial);
     if (!viewstate) throw new PesquisaNaoRealizada("ViewState não encontrado na página inicial do portal — o layout do CJF mudou?");
     let mapa = null;
