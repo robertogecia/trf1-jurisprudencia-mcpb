@@ -243,6 +243,7 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
 
 ## Notas de implementação
 
+- **Portes do TJRO (v1.11.0).** `verificar_citacao_trf1` avisa NEGAÇÃO OMITIDA NO CORTE (negativa escondida pelo `[...]`, regra portada sem medição própria aqui); HTTP 500 da TNU/DJEN é repetido uma vez (`TRF1_MCP_SEM_RETRY_500=1` desliga); data impossível é erro de parâmetro; `linha_do_tempo_trf1` aceita `base="tnu"`. O que NÃO foi portado e por quê: `distinguir` (precisa do voto, só TNU, e de validação cega própria), `diagnostico_cobertura` (o CJF não devolve agregações), Liame/normas/consultar_processo (fontes do TJRO; aqui são BNP, Datajud e outro portal de atos), identificação de navegador (o captcha do CJF independe do User-Agent).
 - **Sinal de situação da tese (v1.11.0).** Na ementa ou no dispositivo, expressões como "Questão de Ordem", "tema representativo", "afetação", "desafetação", "sobrestamento", "súmula cancelada", "revisão de tese", "superação" e "modulação" geram a linha 🚩. É sinal lexical, sem medição própria: serve para escolher o que abrir. A situação do tema se confere no BNP ou na página oficial de Temas Representativos da TNU (situações: julgado, em revisão, em julgamento, cancelado, sobrestado, desafetado).
 - **Auditoria de citações (v1.10.0).** `auditar_citacoes_trf1` não é a do TJRO: o TRF1 não expõe o fecho do voto, então a base é o
   índice do portal (relator, turma, data) e, na TNU, o fecho. Só o dígito verificador inválido é 🔴; relator, turma ou data que divergem
