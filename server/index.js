@@ -201,12 +201,13 @@ server.registerTool(
       "O resultado declarado (provido, desprovido, acolhido, rejeitado…) dos acórdãos do TRF1/JEF1 sobre uma tese, ano a ano. " +
       "Uma consulta por ano (3 a 4 requisições cada; no máximo 6 anos por chamada, padrão os últimos 5), com a contagem real de documentos do " +
       "ano e o resultado lido do dispositivo, 1× por julgamento, nos 50 primeiros de cada ano (AMOSTRA). Mudança de proporção é sinal para ler os " +
-      "acórdãos do ano, nunca prova de superação. Só na base trf1 (o painel de datas não existe na TNU). Se o portal parar no meio, devolve os anos " +
-      "já feitos marcados como [PESQUISA INCOMPLETA].",
+      "acórdãos do ano, nunca prova de superação. Bases: 'trf1' (padrão; acórdãos só até 29/02/2024) e, desde a v1.11.0, 'tnu' (eproc, atualizado; " +
+      "uma consulta por ano, sem filtro de órgão). Se o portal parar no meio, devolve os anos já feitos marcados como [PESQUISA INCOMPLETA].",
     inputSchema: {
       consulta: z.string().default("").describe("Termos na sintaxe do motor (ver buscar_jurisprudencia_trf1)."),
       grupos: z.array(z.array(z.string())).optional().describe("Grupos de sinônimos (cada grupo é OU; os grupos se somam em E). Use o FATO julgado, não a conclusão esperada."),
-      orgao_julgador: z.string().optional().describe("Ex.: \"QUINTA TURMA\" — para ver como UM órgão decide ao longo dos anos."),
+      orgao_julgador: z.string().optional().describe("Ex.: \"QUINTA TURMA\" — para ver como UM órgão decide ao longo dos anos (só base trf1)."),
+      base: z.enum(["trf1", "tnu"]).optional().describe("Padrão 'trf1'. 'tnu' usa o portal próprio da TNU, atualizado."),
       ano_inicio: z.number().int().optional().describe("Primeiro ano (padrão: ano_fim − 4)."),
       ano_fim: z.number().int().optional().describe("Último ano (padrão: ano corrente)."),
     },

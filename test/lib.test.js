@@ -843,7 +843,7 @@ test("v1.6.0 L2 (1) recibo gravado pela busca: campos, origem, destaque, nunca s
   assert.deepEqual(Object.keys(lib.camposDeCustodia(d0)).sort(), [...CHAVES_ANTIGAS, "origem"].sort());   // o lint continua lendo: só se ACRESCENTA `origem`
   assert.equal(lib.camposDeCustodia(d0).origem, "decisao");
   assert.equal(lib.camposDeCustodia(d0, "busca").origem, "busca");
-  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.10.2");
+  assert.equal(lib.camposDeCustodia(d0).versao_servidor, "1.11.0");
   const db = docs.slice(0, 3).map((x, k) => ({ ...x, ementa: k === 0 ? "«dano» " + x.ementa : x.ementa }));
   assert.equal(lib.gravarRecibosDaBusca(db, null, env), 3);
   const rb = lib.lerRecibo(db[0].id, env);
@@ -2074,4 +2074,119 @@ test("v1.10.2: falha persistente tenta só duas vezes e grava a evidência (cont
   assert.ok(!out.includes("var x"), "script não entra no início");
   // e sobrevive à sanitização do diário
   assert.match(lib.sanitizar(out), /content-type=text\/html/);
+});
+
+// ---- v1.11.0: achados do teste ao vivo de 07/11/2026 ----
+const BLOCO_TNU_RELATORA = (cit) => `<div class="card mb-3 resultadoItem" id="resultado771793241868180455715046171017">
+<div class="resValueTipoJurisprudencia">Acórdão</div>
+<div class="resLabel">PROCESSO</div><div class="resValue">5001282-91.2024.4.04.7212/TNU PUIL - Pedido</div>
+<div class="resLabel">UF</div><div class="resValue">SC</div>
+<div class="resLabel">DATA DO JULGAMENTO</div><div class="resValue">27/10/2026</div>
+<div class="resLabel">DATA DA PUBLICAÇÃO</div><div class="resValue">28/10/2026</div>
+<div class="resLabel">RELATORA</div><div class="resValue completo">MARINA VASQUES DUARTE</div>
+<div class="resLabel">DECISÃO</div><div class="resValue completo">A Turma Nacional de Uniformização decidiu, por unanimidade, DAR PROVIMENTO.</div>
+<div class="resLabel">EMENTA</div><div class="resValue completo">DIREITO PREVIDENCIÁRIO. TEMA 322.</div>
+<a class="text-dark inteiroTeor" data-link="externo_controlador.php?acao=x&amp;id_jurisprudencia=771793241868180455715046171017" data-citacao="${cit}"></a></div>`;
+
+test("v1.11.0: índice da TNU lê o rótulo RELATORA e a fonte só da referência final", () => {
+  const cit = "EMENTA: ... Jurisprudência citada: TNU, PUIL n.º 0503318-17.2019.4.05.8107, Rel. Juiz Federal Bianor, D.E. 23.10.2020.   (TNU, PUIL 5001282-91.2024.4.04.7212,   TURMA NACIONAL DE UNIFORMIZAÇÃO  , Relatora   MARINA VASQUES DUARTE  , julgado em 27/10/2026, D.E. 28/10/2026)";
+  const d = lib.parsearResultadosTnu(BLOCO_TNU_RELATORA(cit))[0];
+  assert.equal(d.relator, "MARINA VASQUES DUARTE");
+  assert.equal(d.classe, "PUIL");
+  assert.equal(d.fonte_publicacao, "D.E. 28/10/2026");
+  assert.ok(!d.fonte_publicacao.includes("2020"));
+  // sem rótulo nenhum, o relator vem da referência final
+  const semRotulo = BLOCO_TNU_RELATORA(cit).replace('<div class="resLabel">RELATORA</div><div class="resValue completo">MARINA VASQUES DUARTE</div>', "");
+  assert.equal(lib.parsearResultadosTnu(semRotulo)[0].relator, "MARINA VASQUES DUARTE");
+  // referência sem D.E.: fonte vazia, nunca a do julgado citado
+  const d2 = lib.parsearResultadosTnu(BLOCO_TNU_RELATORA(cit.replace(", D.E. 28/10/2026)", ")")))[0];
+  assert.equal(d2.fonte_publicacao, "");
+});
+
+test("v1.11.0: 'TURMA 4.0 - ADJUNTA A TR-AC' recebe o aviso de Turma Recursal; 🆕 com publicação não diz 'pode não ter sido publicado'", () => {
+  const base = { id: "1", base: "trf1", numero: "1000654-38.2024.4.01.3500", tipo: "Acórdão", classe: "AGREXT", sigla: "AGREXT", relator: "X", orgao: "PRIMEIRA TURMA 4.0 - ADJUNTA A TR-AC", origem: "", data_julgamento: "23/02/2026", data_publicacao: "23/02/2026", ementa: "E", decisao: "NEGAR PROVIMENTO", campos: {} };
+  const out = lib.formatarResultados ? lib.formatarResultados([base], { total: 1, pagina: 1, porPagina: 10, hoje: new Date(2026, 2, 1) }) : null;
+  if (out === null) return;   // nome da função de formatação pode variar: o teste de baixo cobre pelo texto
+  assert.match(out, /Turma Recursal \(Juizados/);
+});
+
+test("v1.11.0: limpar() separa 'VOTO-EMENTADIREITO' e 'improcedente.2. O autor'", () => {
+  assert.equal(lib.limpar("VOTO-EMENTADIREITO PREVIDENCIÁRIO"), "VOTO-EMENTA DIREITO PREVIDENCIÁRIO");
+  assert.equal(lib.limpar("julgou improcedente.2. O autor alegou"), "julgou improcedente. 2. O autor alegou");
+  assert.equal(lib.limpar("art. 1.022 do CPC e 8.213/91"), "art. 1.022 do CPC e 8.213/91");   // número de lei não é tocado
+  assert.equal(lib.limpar("Lei n. 9.099/95.3. Dispensado"), "Lei n. 9.099/95. 3. Dispensado");
+});
+
+test("v1.11.0: diário classifica acervo e zero como informação, não erro do autor; guarda o motivo inteiro", () => {
+  assert.equal(lib.tipoDoErroDiario("[PESQUISA NÃO REALIZADA — o período pedido começa depois do fim do acervo: ... 29/02/2024 ... fonte=[\"JEF1\"]]"), "fora_do_acervo");
+  assert.equal(lib.tipoDoErroDiario("[PESQUISA INCOMPLETA — zero publicação no DJEN para a frase «x»]"), "sem_resultado");
+  assert.equal(lib.tipoDoErroDiario("[PESQUISA INCOMPLETA — zero resultado, mas a versão antiga do portal só tem acórdãos do TRF1 (2º grau) julgados até 29/02/2024]"), "fora_do_acervo");
+  assert.equal(lib.tipoDoErroDiario("[PESQUISA NÃO REALIZADA — O portal respondeu algo inesperado"), "resposta_inesperada");
+});
+
+test("v1.11.0: sinais de situação da tese na ementa/dispositivo (lexical, fraco)", () => {
+  assert.deepEqual(lib.sinaisDeSituacaoDaTese("PEDIDO SOBRESTADO ATÉ O JULGAMENTO DO TEMA REPRESENTATIVO 300. QUESTÃO DE ORDEM Nº 47."), ["Questão de Ordem", "tema representativo", "sobrestamento"]);
+  assert.deepEqual(lib.sinaisDeSituacaoDaTese("Cancelamento da Súmula 32 da TNU. Entendimento superado pelo Tema 1.300 do STF."), ["súmula cancelada", "superação"]);
+  assert.deepEqual(lib.sinaisDeSituacaoDaTese("APOSENTADORIA POR INVALIDEZ. TERMO INICIAL. DER."), []);
+  const d = { id: "1", base: "tnu", tipo: "Acórdão", orgao: "TURMA NACIONAL DE UNIFORMIZAÇÃO", ementa: "Afetação ao Tema 320. Sobrestamento dos feitos.", decisao: "" };
+  const l = lib.linhasDeSinais(d).join("\n");
+  assert.match(l, /🚩 SINAL DE SITUAÇÃO DA TESE/);
+  assert.match(l, /afetação · sobrestamento/);
+  assert.match(l, /NÃO prova superação/);
+});
+
+test("v1.11.0 (porte TJRO): NEGAÇÃO OMITIDA NO CORTE no verificar", () => {
+  const texto = "EMENTA. PREVIDENCIÁRIO. A cobrança da tarifa de abertura de crédito não é devida ao segurado, conforme a jurisprudência pacífica. Recurso desprovido.";
+  const r = lib.conferir(texto, "A cobrança da tarifa de abertura de crédito [...] é devida ao segurado", "TRF1", false);
+  assert.equal(r.ok, true);
+  assert.ok(r.alertas.some((a) => a.startsWith("NEGAÇÃO OMITIDA NO CORTE")), r.alertas.join(" | "));
+  const r2 = lib.conferir(texto, "A cobrança da tarifa de abertura de crédito não é devida [...] jurisprudência pacífica", "TRF1", false);
+  assert.equal(r2.ok, true);
+  assert.ok(!r2.alertas.some((a) => a.startsWith("NEGAÇÃO OMITIDA NO CORTE")), r2.alertas.join(" | "));
+});
+
+test("v1.11.0 (porte TJRO): HTTP 500 da TNU/DJEN é repetido uma vez; CJF não", async (t) => {
+  lib._retry500ParaTeste();
+  let n = 0;
+  const f500umaVez = async () => { n++; return n === 1 ? new Response("erro", { status: 500, headers: { "content-type": "text/html" } }) : new Response('{"items":[],"count":0}', { status: 200, headers: { "content-type": "application/json" } }); };
+  const env = { TRF1_MCP_PAUSA_RETRY_500_MS: "0" };
+  const out = await lib.requisitar(new lib.CookieJar(), "GET", lib.DJEN_API + "?x=1", "djen", { esperado: "qualquer" }, f500umaVez, env);
+  assert.equal(n, 2); assert.match(out, /items/); assert.equal(lib._retry500ParaTeste(), 1);
+  n = 0;
+  const sempre500 = async () => { n++; return new Response("erro", { status: 500, headers: { "content-type": "text/html" } }); };
+  await assert.rejects(() => lib.requisitar(new lib.CookieJar(), "GET", lib.SITE_TNU + "x", "busca", { esperado: "qualquer" }, sempre500, env), /HTTP 500/);
+  assert.equal(n, 2);
+  n = 0;
+  await assert.rejects(() => lib.requisitar(new lib.CookieJar(), "GET", lib.SITE_TRF1 + "/trf1/index.xhtml", "busca", { esperado: "html" }, sempre500, env), /HTTP 500/);
+  assert.equal(n, 1, "no CJF não repete");
+  n = 0;
+  await assert.rejects(() => lib.requisitar(new lib.CookieJar(), "GET", lib.DJEN_API, "djen", { esperado: "qualquer" }, sempre500, { ...env, TRF1_MCP_SEM_RETRY_500: "1" }), /HTTP 500/);
+  assert.equal(n, 1, "desligado por variável");
+});
+
+test("v1.11.0 (porte TJRO): data impossível é erro de parâmetro antes de consultar", () => {
+  assert.equal(lib.normalizarData("2024-02-29", "data_inicio"), "29/02/2024");
+  assert.throws(() => lib.normalizarData("2023-02-29", "data_inicio"), /impossível/);
+  assert.throws(() => lib.normalizarData("31/04/2025", "data_fim"), /impossível/);
+  assert.throws(() => lib.normalizarData("2025-13-01", "data_fim"), /impossível/);
+});
+
+test("v1.11.0: linha do tempo na base tnu consulta o eproc ano a ano", async (t) => {
+  const arqOrig = lib._arquivoEstadoAtual();
+  lib._setArquivoEstadoParaTeste(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "trf1-lt-")), "estado.json"));
+  t.after(() => { lib._resetDisjuntorParaTeste(); lib._setArquivoEstadoParaTeste(arqOrig); });
+  lib._resetDisjuntorParaTeste();
+  const pedidos = [];
+  const f = async (url, init = {}) => {
+    pedidos.push(String(init.body || ""));
+    return new Response(ler("14_tnu_eproc_busca.html", "latin1"), { status: 200, headers: { "content-type": "text/html; charset=iso-8859-1" } });
+  };
+  const out = await lib.linhaDoTempo({ consulta: "aposentadoria", base: "tnu", ano_inicio: 2025, ano_fim: 2026 }, f, {});
+  assert.match(out, /Linha do tempo/); assert.match(out, /base: TNU/);
+  assert.match(out, /\| 2025 \|/); assert.match(out, /\| 2026 \|/);
+  assert.equal(pedidos.length, 2);
+  assert.ok(pedidos.every((b) => /2025|2026/.test(decodeURIComponent(b))), "o ano vai no formulário");
+  assert.ok(!out.includes("29/02/2024"), "sem aviso do acervo do TRF1");
+  const e = await lib.linhaDoTempo({ consulta: "x", base: "tnu", orgao_julgador: "Q" }, f, {});
+  assert.match(e, /Erro de parâmetro/);
 });

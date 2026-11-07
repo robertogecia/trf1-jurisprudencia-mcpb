@@ -1,5 +1,24 @@
 # Novidades
 
+## 1.11.0
+
+Correções achadas em teste ao vivo de 07/11/2026, ferramenta por ferramenta:
+
+- **Relatora da TNU não some mais.** O portal da TNU rotula "RELATORA" quando a relatora é juíza; a extensão só lia "RELATOR", e o campo saía vazio na lista, na triagem e na citação. Agora lê os dois rótulos e, se faltar, pega o nome da referência final do próprio portal.
+- **"Fonte" da TNU vinha do julgado errado.** A fonte de publicação era lida do primeiro "D.E." do texto, que podia ser o de um julgado citado na ementa. Agora vem só da referência final do portal.
+- **Turma Recursal com nome novo recebe o aviso.** "PRIMEIRA TURMA 4.0 - ADJUNTA A TR-AC" é Turma Recursal e não recebia o aviso de que pesa só em processo de JEF.
+- **Julgado recente com data de publicação.** O aviso 🆕 dizia "pode ainda não ter sido publicado" ao lado da data de publicação. Agora, quando há publicação, diz que ainda cabe embargos ou recurso.
+- **Texto colado das Turmas Recursais.** "VOTO-EMENTADIREITO" e "improcedente.2. O autor" (quebra de linha perdida no PJe) passam a sair separados, na tela e no recibo.
+- **Sinal de situação da tese.** Quando a ementa ou o dispositivo trazem "Questão de Ordem", "tema representativo", "afetação", "sobrestamento", "súmula cancelada", "revisão de tese", "superação" ou "modulação", aparece a linha 🚩. É sinal lexical fraco, só para escolher o que abrir; a situação se confere no BNP.
+- **Portes da extensão do TJRO (comparação de 07/11/2026):**
+  - `verificar_citacao_trf1` ganha o alerta **NEGAÇÃO OMITIDA NO CORTE**: quando o `[...]` esconde uma negativa que rege o trecho seguinte ("a cobrança [...] é devida" sobre "NÃO é devida"), avisa que o recorte pode inverter o julgado. Regra portada já calibrada no TJRO/TRT14, sem medição própria neste acervo.
+  - **HTTP 500 da TNU ou do DJEN é repetido uma vez**, dentro do limite de ritmo, com nota na resposta. No CJF não se repete (a sessão JSF teria de ser refeita). Desliga com `TRF1_MCP_SEM_RETRY_500=1`.
+  - **Data impossível é erro de parâmetro** (30/02, 31/04) antes de ir ao portal.
+  - **`linha_do_tempo_trf1` aceita `base="tnu"`**: uma consulta por ano no portal da TNU, atualizado. A descrição antiga dizia que o painel de datas não existia na TNU; existe desde que a TNU passou ao eproc (v1.8.0).
+- **Diário de erros mais honesto.** Período fora do acervo (TRF1 só até 29/02/2024) e zero resultado deixam de contar como erro que o autor corrige; o motivo completo da falha passa a ser gravado (antes saía só "[PESQUISA NÃO REALIZADA]"), e "respondeu algo inesperado" é classificado como resposta inesperada.
+
+Para atualizar: baixe `Jurisprudencia-TRF1.mcpb`, dê dois cliques e reinicie o Claude.
+
 ## 1.10.2
 
 - **Uma segunda tentativa quando a página inicial do portal vem estranha.** Houve relato de falha intermitente, quase sempre na primeira consulta depois de um tempo parada: o portal respondia sem a página do formulário e a busca saía como "pesquisa não realizada". Agora a extensão tenta mais uma vez, com sessão nova, antes de desistir. Desafio de navegador, bloqueio e captcha continuam sem repetição.

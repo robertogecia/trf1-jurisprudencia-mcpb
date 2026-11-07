@@ -14,10 +14,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checarSemanal } from "./semana.js";
 // v1.2.0 (06/10/2026): regras de atribuição do TJRO v1.13/1.15 pelo bloco compartilhado (cópia byte a byte do TRT14/TJSE)
+import { negacaoNoCorte } from "./negacao-corte.js";
 import { norm1, alegacaoDaParte, negacaoEscopo, negacaoProxima, entreAspas, trechosObiter, inicioDaFrase, RE_OBITER, OBITER_JANELA, OBITER_CABECA } from "./atribuicao13.js";
 import { posicaoTnu, secoesDaEmenta } from "./posicao2.js";
 
-export const VERSAO = "1.10.2";
+export const VERSAO = "1.11.0";
 // v1.8.0: o repositório Python (trf1-jurisprudencia-mcp) está arquivado e não aceita issue; relato e User-Agent apontam o atual.
 export const REPO_GITHUB = "robertogecia/trf1-jurisprudencia-mcpb";
 
@@ -126,6 +127,8 @@ export function limpar(texto, limite = 0) {
   t = t.replace(/<[^>]+>/g, " ");
   t = decodeEntities(t);
   t = t.replace(/\s+/g, " ").trim();
+  // v1.11.0: o PJe das Turmas Recursais perde a quebra de linha: "VOTO-EMENTADIREITO" e "improcedente.2. O autor" (medido em 07/11/2026)
+  t = t.replace(/\b(VOTO-?EMENTA)(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/g, "$1 ").replace(/([a-záéíóúâêôãõç)]|\/\d{2,4})\.(\d{1,2})\.(?= ?[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/g, "$1. $2.");
   if (limite && cpLen(t) > limite) {   // v1.6.0: pontos de código, como o len()/fatia do Python (emoji fora do BMP conta 1)
     const cortado = cpSlice(t, limite);
     const i = cortado.lastIndexOf(" ");
@@ -231,10 +234,18 @@ export function validarTamanho(rotulo, valor) {
 
 export function normalizarData(data, rotulo) {
   const d = (data || "").trim();
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) return d;
+  let out = null;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) out = d;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
-  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-  throw new ErroDeParametro(`${rotulo} inválida: ${JSON.stringify(data)} — use AAAA-MM-DD ou DD/MM/AAAA.`);
+  if (m) out = `${m[3]}/${m[2]}/${m[1]}`;
+  if (!out) throw new ErroDeParametro(`${rotulo} inválida: ${JSON.stringify(data)} — use AAAA-MM-DD ou DD/MM/AAAA.`);
+  // v1.11.0 (porte do TJRO): 30/02 ou 31/04 passavam no formato e iam ao portal, que devolvia zero ou erro
+  const [dd, mm, aa] = out.split("/").map(Number);
+  const dt = new Date(Date.UTC(aa, mm - 1, dd));
+  if (dt.getUTCFullYear() !== aa || dt.getUTCMonth() !== mm - 1 || dt.getUTCDate() !== dd) {
+    throw new ErroDeParametro(`${rotulo} impossível: ${JSON.stringify(data)} (esse dia não existe no calendário).`);
+  }
+  return out;
 }
 
 // --------------------------------------------------------------- montagem da consulta ---
@@ -702,6 +713,28 @@ function tokensCasamento(ps0) {
   }
   return out;
 }
+/** v1.11.0: como faixaNorm, mas devolve [ini, fim) de CADA fragmento no norm1, a partir da âncora `ini0` (ou null). */
+export function spansNorm1(nt, fragmentos, ini0 = 0) {
+  const lista = fragmentos.map((f) => normalizarCasamento(f).split(" ").filter(Boolean)).filter((ps) => ps.length);
+  if (lista.length < 2) return null;
+  const pad = (ps) => {
+    const tk = tokensCasamento(ps);
+    let src = "(?<![a-z0-9])";
+    tk.forEach((t, i) => { src += (i ? (tk[i - 1] === SLOT_NUMERO ? "[^a-z0-9]*" : "[^a-z0-9]+") : "") + t; });
+    return new RegExp(src + "(?![a-z0-9])", "g");
+  };
+  const res = lista.map(pad);
+  const out = [];
+  let pos = Math.max(0, ini0 | 0);
+  for (const re of res) {
+    re.lastIndex = pos;
+    const m = re.exec(nt);
+    if (!m) return null;
+    out.push([m.index, m.index + m[0].length]);
+    pos = m.index + m[0].length;
+  }
+  return out;
+}
 export function faixaNorm(nt, fragmentos, pertoDe = 0.0) {
   const lista = fragmentos.map((f) => normalizarCasamento(f).split(" ").filter(Boolean)).filter((ps) => ps.length);
   if (!lista.length) return null;
@@ -943,6 +976,20 @@ export function conferir(texto, trecho, tribunal = "TNU", comAtribuicao = true) 
       alertas.push(`ENTRE ASPAS: o trecho parece estar dentro de aspas no acórdão — é o tribunal citando alguém (doutrina, lei, decisão recorrida, outro julgado). Confira de quem é a frase antes de atribuí-la à ${tribunal}.`);
     if (comAtribuicao && alegacaoDaParte(nt, fx[0], fx[1], bruto))
       alertas.push("ALEGAÇÃO DA PARTE: o texto relata o que uma parte (INSS, União, recorrente…) sustenta, alega ou requer logo antes do trecho — o trecho pode ser tese da parte, não decisão do tribunal. Confira no relatório/voto quem fala.");
+  }
+  // v1.11.0 (porte do TJRO): negação que fica DENTRO do [...] e rege o fragmento seguinte ("a cobrança [...] é devida" sobre "NÃO é devida")
+  if (fx && frags.length > 1) {
+    const sp1 = spansNorm1(nt, frags, fx[0]);
+    for (let k = 1; sp1 && k < sp1.length; k++) {
+      const a = sp1[k - 1][1], b = sp1[k][0];
+      const neg = negacaoNoCorte(nt.slice(a, b), nt.slice(b, b + 40), nt.slice(Math.max(0, a - 30), a));
+      if (!neg) continue;
+      const omitido = nt.slice(a, b).replace(/\s+/g, " ").trim();
+      const curto = omitido.length > 140 ? "…" + omitido.slice(-140) : omitido;
+      const negTxt = nt.slice(a + neg[0], a + neg[1]).trim();
+      alertas.push(`NEGAÇÃO OMITIDA NO CORTE: o [...] tira «${curto}»${negTxt === omitido ? ", negativa que rege o trecho seguinte" : `, com a negativa «${negTxt}» regendo o trecho seguinte`} — o recorte pode inverter o julgado. Não citar sem ler a frase inteira (regra portada do TJRO, sem medição própria neste acervo).`);
+      break;
+    }
   }
   if (fx && negacaoEscopo(nt, fx[0], fx[1], bruto))
     alertas.push(negacaoProxima(nt, fx[0]) ? "NEGAÇÃO: há negativa logo antes do trecho — o recorte pode inverter o julgado. Não citar sem ler a frase inteira."
@@ -1223,12 +1270,34 @@ export function linhasDeSinais(d) {
   if (tipo.includes("monocrat") || tipo.includes("presid")) {
     linhas.push("⚠️ decisão monocrática/da presidência: não é precedente do colegiado — serve para ver como o relator decide, não para citar como jurisprudência do órgão.");
   }
-  if (/turma\s+recursal|juizado/.test(fold(`${d.orgao || ""} ${d.origem || ""}`))) {
+  if (/turma\s+recursal|juizado|turma\s+\d+\.0\b|adjunta\s+a\s+tr\b/.test(fold(`${d.orgao || ""} ${d.origem || ""}`))) {   // v1.11.0: "TURMA 4.0 - ADJUNTA A TR-AC" é Turma Recursal
     linhas.push("⚠️ Turma Recursal (Juizados Especiais Federais): pesa em processo de JEF; no rito comum é só persuasivo — prefira acórdão de Turma do TRF1 e diga o órgão na citação.");
   }
   const a = ancoras([d.ementa, d.decisao, d.inteiro_teor_texto].filter(Boolean).join(" "));
   if (a.length) linhas.push(`Cita: ${a.join(" · ")} — precedente qualificado citado pelo julgado (peso, e âncora para a próxima busca); confirme a situação de cada um no BNP/fonte.`);
+  const st = sinaisDeSituacaoDaTese([d.ementa, d.decisao].filter(Boolean).join(" "));
+  if (st.length) linhas.push(`🚩 SINAL DE SITUAÇÃO DA TESE (lexical, só na ementa/dispositivo): ${st.join(" · ")} — pode ser afetação, sobrestamento, cancelamento de súmula ou revisão de entendimento; NÃO prova superação nem vigência: confira o tema/súmula no BNP (buscar_precedentes_qualificados) ou na página oficial de Temas Representativos da TNU (situações: julgado, em revisão, em julgamento, cancelado, sobrestado, desafetado — https://www.cjf.jus.br/cjf/corregedoria-da-justica-federal/turma-nacional-de-uniformizacao/temas-representativos) e leia o inteiro teor.`);
   return linhas;
+}
+
+// v1.11.0: expressões que, na ementa ou no dispositivo, costumam marcar tese afetada, sobrestada, cancelada ou revista.
+// Sinal lexical FRACO, sem medição própria: serve para escolher o que abrir, nunca para afirmar situação.
+const SINAIS_SITUACAO = [
+  [/\bquest[ãa]o de ordem\b/i, "Questão de Ordem"],
+  [/\b(?:tema|recurso)s?\s+representativ[oa]s?\b|\brepresentativ[oa]s? de controv[ée]rsia\b/i, "tema representativo"],
+  [/\bafeta[çc][ãa]o\b|\bafetad[oa]s?\b/i, "afetação"],
+  [/\bdesafeta[çc][ãa]o\b|\bdesafetad[oa]s?\b/i, "desafetação"],
+  [/\bsobrest(?:amento|ad[oa]s?|ar)\b/i, "sobrestamento"],
+  [/\b(?:cancelamento|cancelad[oa]s?)\b[^.;]{0,40}\bs[úu]mula\b|\bs[úu]mula\b[^.;]{0,40}\bcancelad[oa]\b/i, "súmula cancelada"],
+  [/\brevis[ãa]o d[aeo]s? (?:tese|entendimento|s[úu]mula)\b|\btese\b[^.;]{0,30}\brevis(?:ta|ada)\b/i, "revisão de tese"],
+  [/\bsupera[çc][ãa]o\b|\bsuperad[oa]s?\b|\boverruling\b|\bn[ãa]o mais se aplica\b/i, "superação"],
+  [/\bmodula[çc][ãa]o\b/i, "modulação"],
+];
+export function sinaisDeSituacaoDaTese(texto) {
+  const t = String(texto || "").slice(0, 60_000);
+  const out = [];
+  for (const [re, rotulo] of SINAIS_SITUACAO) if (re.test(t)) out.push(rotulo);
+  return out;
 }
 
 // --------------------------------------------------------------------------- recibos ---
@@ -1680,7 +1749,7 @@ export function linhaDeRitmo(agora = Date.now()) {
     const idx = Math.max(0, Math.min(Math.trunc(Number(e.indiceJanela) || 0), ESCADA_JANELA_MS.length - 1));
     const janela = ESCADA_JANELA_MS[idx];
     const naJanela = (e.requisicoes || []).filter((t) => agora - t <= janela).length;
-    return `\n_Ritmo do portal: ${naJanela} de ${JANELA_MAX_REQS} requisições na janela atual de ${fmtHms(janela)} (nível ${idx + 1} de ` +
+    return notaRetry500() + `\n_Ritmo do portal: ${naJanela} de ${JANELA_MAX_REQS} requisições na janela atual de ${fmtHms(janela)} (nível ${idx + 1} de ` +
       `${ESCADA_JANELA_MS.length}), contando todos os processos desta extensão nesta máquina; cada busca gasta 2 a 4. Se o seu roteiro ` +
       "tem teto por frente, conte as suas chamadas: este número só diz o fôlego do limitador._";
   } catch {
@@ -1792,7 +1861,9 @@ export function formatBusca(docs, total, meta) {
     if (d.fonte_publicacao) metaL.push(`Fonte: ${d.fonte_publicacao}`);
     linhas.push("  " + metaL.join(" · "));
     linhas.push(`  Citação: ${citacaoComLink(d)} — verificação: ${nivelVerificacao(d, false, "lista")}`);
-    if (rec !== null) linhas.push(`  🆕 JULGADO RECENTE (${rec} dia(s)): pode ainda não ter sido publicado e cabe embargos de declaração; confira a publicação antes de citar.`);
+    if (rec !== null) linhas.push(d.data_publicacao
+      ? `  🆕 JULGADO RECENTE (${rec} dia(s)): publicado em ${d.data_publicacao}, ainda cabe embargos de declaração ou recurso; confira se foi integrado ou alterado antes de citar.`
+      : `  🆕 JULGADO RECENTE (${rec} dia(s)): pode ainda não ter sido publicado e cabe embargos de declaração; confira a publicação antes de citar.`);
     const vot = votacaoDoDocumento(d);
     if (vot) linhas.push(`  🗳️ Votação declarada no dispositivo: ${vot} (não diz quem foi o vencido; o voto vencido só se vê no inteiro teor)`);
     for (const sl of linhasDeSinais(d)) linhas.push(`  ${sl}`);
@@ -2525,7 +2596,29 @@ function paresParaForm(pares) {
   return body;
 }
 
-export async function requisitar(jar, metodo, url, operacao, { data, headers = {}, esperado = "html" } = {}, fetchImpl = fetch, env = process.env) {
+// v1.11.0 (porte do TJRO 1.42.5): HTTP 500 do portal da TNU ou do DJEN é repetido UMA vez (nunca 403/429, bloqueio, desafio nem rede).
+// No CJF (JSF/ViewState) não se repete: a sequência inteira teria de ser refeita. Desligue com TRF1_MCP_SEM_RETRY_500=1.
+let retry500Feito = 0;
+export function _retry500ParaTeste() { const n = retry500Feito; retry500Feito = 0; return n; }
+export function notaRetry500() {
+  if (!retry500Feito) return "";
+  const n = retry500Feito; retry500Feito = 0;
+  return `\n_ℹ️ O portal respondeu HTTP 500 a ${n === 1 ? "uma requisição" : n + " requisições"} e ela foi repetida uma vez, dentro do limite de ritmo; a repetição funcionou (custou uma vaga extra)._`;
+}
+export async function requisitar(jar, metodo, url, operacao, opcoes = {}, fetchImpl = fetch, env = process.env) {
+  try {
+    return await requisitarUma(jar, metodo, url, operacao, opcoes, fetchImpl, env);
+  } catch (e) {
+    const repetivel = e instanceof PesquisaNaoRealizada && !(e instanceof PortalRecusou) && /HTTP 500\b/.test(String(e?.message || ""))
+      && (String(url).startsWith(SITE_TNU) || String(url).startsWith(DJEN_API)) && env.TRF1_MCP_SEM_RETRY_500 !== "1";
+    if (!repetivel) throw e;
+    await new Promise((ok) => setTimeout(ok, Number(env.TRF1_MCP_PAUSA_RETRY_500_MS ?? 1500)));
+    const r = await requisitarUma(jar, metodo, url, operacao, opcoes, fetchImpl, env);   // se falhar de novo, sobe o erro da 2ª (sem 3ª)
+    retry500Feito++;
+    return r;
+  }
+}
+async function requisitarUma(jar, metodo, url, operacao, { data, headers = {}, esperado = "html" } = {}, fetchImpl = fetch, env = process.env) {
   const reserva = reservarRequisicao();
   if (reserva.erro) throw new PesquisaNaoRealizada(reserva.erro);
   if (reserva.esperarMs > 0) await new Promise((r) => setTimeout(r, reserva.esperarMs));
@@ -2840,12 +2933,18 @@ export function parsearResultadosTnu(html) {
     const link = mLink ? SITE_TNU + decodeEntities(mLink[1]).replace(/&termosPesquisados=[^&]*/, "") : "";
     const v = (r) => semDestaque(limpar(valores[r] || ""));
     const numero = v("PROCESSO").replace(/\s*\/\s*TNU\s*$/i, "");
-    const mRef = /\(TNU,\s*([A-ZÇ]{2,10})\s+[\d.\-/]+\s*,\s*([^,]+?)\s*,/.exec(citacaoPortal);
-    const mFonte = /,\s*(D\.?\s?E\.?[^)]*?)\s*\)\s*$/.exec(citacaoPortal);
+    // v1.11.0: a referência do portal fica no ÚLTIMO parêntese "(TNU, PUIL n, órgão, Relator(a) X, julgado em d[, D.E. d])".
+    // Antes, a fonte era lida do primeiro "D.E." do texto — que pode ser o de um julgado CITADO na ementa.
+    const ultimoPar = citacaoPortal.lastIndexOf("(TNU,");
+    const refPortal = ultimoPar >= 0 ? citacaoPortal.slice(ultimoPar) : "";
+    const mRef = /\(TNU,\s*([A-ZÇ]{2,10})\s+[\d.\-/]+\s*,\s*([^,]+?)\s*,/.exec(refPortal);
+    const mFonte = /,\s*(D\.?\s?E\.?[^)]*?)\s*\)\s*$/.exec(refPortal);
+    const mRelRef = /,\s*Relator(?:a|\s*\(a\))?\s+([^,()]+?)\s*,/i.exec(refPortal);
     const d = {
       id, base: "tnu", campos: {}, numero, numero_digitos: soDigitos(numero),
       tipo: v("TIPO"), qualificacao: "", classe: mRef ? mRef[1] : "", sigla: mRef ? mRef[1] : "",
-      relator: v("RELATOR"), relator_convocado: "", relator_para_acordao: "",
+      // v1.11.0: o portal rotula "RELATORA" para juíza; o rótulo só com "RELATOR" deixava o campo vazio (medido em 07/11/2026).
+      relator: v("RELATOR") || v("RELATORA") || v("RELATOR(A)") || (mRelRef ? limpar(mRelRef[1]) : ""), relator_convocado: "", relator_para_acordao: "",
       origem: v("UF"), orgao: mRef ? limpar(mRef[2]) : "TURMA NACIONAL DE UNIFORMIZAÇÃO",
       data_julgamento: v("DATA DO JULGAMENTO"), data_publicacao: v("DATA DA PUBLICAÇÃO"),
       fonte_publicacao: mFonte ? limpar(mFonte[1]) : "",
@@ -3563,7 +3662,10 @@ export function tipoDoErroDiario(m) {
   if (/certificate|CERT_|SSL|TLS|self[- ]signed|UNABLE_TO_VERIFY/i.test(m)) return "certificado";
   if (/getaddrinfo|ENOTFOUND|EAI_AGAIN|Name or service|ECONNREFUSED|Connection refused|ENETUNREACH|EHOSTUNREACH/i.test(m)) return "dns_ou_rede_local";
   if (/ConnectError|ReadError|ECONNRESET|ECONN|Connection reset|UND_ERR|socket|fetch failed/i.test(m)) return "conexao_interrompida";
-  if (/sess[ãa]o|ViewState|resposta inesperada|n[ãa]o reconhec/i.test(m)) return "resposta_inesperada";
+  if (/sess[ãa]o|ViewState|resposta inesperada|algo inesperado|n[ãa]o reconhec/i.test(m)) return "resposta_inesperada";   // v1.11.0: "respondeu algo inesperado" caía em "outro"
+  // v1.11.0: limite do acervo e zero resultado não são erro — antes caíam em "outro" e contavam como causa do autor
+  if (/fim do acervo|s[óo] tem ac[óo]rd[ãa]os do TRF1|29\/02\/2024|linha do tempo s[óo] at[ée]/i.test(m)) return "fora_do_acervo";
+  if (/zero (?:resultado|publica[çc])/i.test(m)) return "sem_resultado";
   return "outro";
 }
 
@@ -3649,8 +3751,9 @@ export function comDiario(nome, fn, env = process.env) {
     }
     try {
       if (nome !== "diagnostico_erros_trf1" && typeof r === "string" && RE_MARC_PARCIAL.test(r) && tipoDoErroDiario(r) !== "limite_de_ritmo") {
-        const mm = /^\s*\[([^\]]{0,400})\]/.exec(r);   // só o motivo entre colchetes: o corpo da resposta traz consulta e filtros
-        registrarErro(nome, { texto: mm ? `[${mm[1]}]` : "[PESQUISA NÃO REALIZADA]", args: a, ms: Date.now() - t0, parcial: r.slice(0, 40).includes("INCOMPLETA") }, env);
+        // v1.11.0: o motivo pode ter "]" dentro (ex.: fonte=["JEF1"]) e nem sempre está no início da resposta: pega da marca até o fim da linha
+        const mm = /\[PESQUISA (?:NÃO REALIZADA|INCOMPLETA)[^\n]{0,400}/.exec(r);
+        registrarErro(nome, { texto: mm ? mm[0] : "[PESQUISA NÃO REALIZADA]", args: a, ms: Date.now() - t0, parcial: /INCOMPLETA/.test(mm ? mm[0] : r.slice(0, 40)) }, env);
       }
     } catch { /* o registro nunca quebra a ferramenta */ }
     return r;
@@ -3668,6 +3771,8 @@ const CAUSAS_ERRO = {
   conexao_interrompida: ["A conexão caiu no meio: pode ser o portal fora do ar ou a rede.", "Espere alguns minutos e tente UMA vez; se o portal abre no navegador e a extensão não, relate com o relatório.", "portal"],
   rede_ou_certificado_antigo: ["Falha de rede, DNS ou certificado.", "Confira a conexão/VPN/proxy. Se só esta extensão falha, relate.", "usuario"],
   resposta_inesperada: ["O portal respondeu num formato que a extensão não reconhece.", "Pode ser mudança no portal: envie o relatório ao autor.", "autor"],
+  fora_do_acervo: ["Período fora do acervo acessível (acórdãos do TRF1 só até 29/02/2024 na versão antiga do portal).", "Não é erro: use buscar_djen_trf1, o JusRatio ou fonte=[\"JEF1\"]; registre a frente como pendente, nunca como \"não localizado\".", "ninguem"],
+  sem_resultado: ["Zero resultado na fonte (não é falha de consulta).", "Reformule a busca ou troque a fonte; zero nunca é \"não localizado\" sem cobertura conferida.", "usuario"],
   outro: ["Erro não classificado.", "É o mais útil para o autor: envie o relatório.", "autor"],
 };
 export function causaErro(tipo) {
@@ -3842,7 +3947,7 @@ async function julgadosQueCitamNoPortal(a, fetchImpl, env) {
 
 export function formatarLinhaDoTempo(linhas, filtros, incompleta = "") {
   const cab = incompleta ? `[PESQUISA INCOMPLETA — ${incompleta}]\n` : "";
-  const out = [cab + `**Linha do tempo no TRF1** (${filtros}) — contagem por documento do portal; resultado declarado lido do dispositivo, 1× por julgamento, ` +
+  const out = [cab + `**Linha do tempo ${filtros.includes("base: TNU") ? "na TNU" : "no TRF1"}** (${filtros}) — contagem por documento do portal; resultado declarado lido do dispositivo, 1× por julgamento, ` +
     "em AMOSTRA (os 50 primeiros de cada ano). Mudança de proporção é sinal para ler, nunca prova de superação.", "",
     "| Ano | Documentos | Julgamentos na amostra | Resultado declarado |", "|---|---|---|---|"];
   for (const l of linhas) {
@@ -3855,7 +3960,10 @@ export function formatarLinhaDoTempo(linhas, filtros, incompleta = "") {
 export async function linhaDoTempo(a = {}, fetchImpl = fetch, env = process.env) {
   let consultaM, ai, af, tipos, fontes;
   const orgao = a.orgao_julgador;
+  const base = a.base || "trf1";   // v1.11.0: a TNU (eproc) tem filtro de datas — é a única base ao vivo desde o captcha do CJF
   try {
+    if (!["trf1", "tnu"].includes(base)) throw new ErroDeParametro(`base ${JSON.stringify(a.base)}: a linha do tempo existe nas bases "trf1" e "tnu"`);
+    if (base === "tnu" && orgao) throw new ErroDeParametro("orgao_julgador não se aplica à TNU (órgão único); use o filtro relator na busca");
     validarTamanho("consulta", a.consulta);
     consultaM = montarConsulta(a.consulta || "", a.grupos);
     if (!consultaM) throw new ErroDeParametro("informe `consulta` ou `grupos`: a linha do tempo precisa de uma tese");
@@ -3864,14 +3972,33 @@ export async function linhaDoTempo(a = {}, fetchImpl = fetch, env = process.env)
     ai = paraInt(a.ano_inicio || (af - 4), "ano_inicio");
     if (ai > af || ai < 1989 || af > hoje + 1) throw new ErroDeParametro(`anos inválidos (${ai}–${af})`);
     if (af - ai + 1 > ANOS_TIMELINE_MAX) throw new ErroDeParametro(`no máximo ${ANOS_TIMELINE_MAX} anos por chamada (cada ano gasta 3 a 4 requisições ao portal); recebi ${af - ai + 1}`);
-    tipos = validarTipos(["ACORDAO"], "trf1");
+    tipos = validarTipos(["ACORDAO"], base);
     fontes = validarFontes(null);
   } catch (e) {
     if (e instanceof ErroDeParametro) return erroDeParametro(e);
     return carimboNaoRealizada(`erro inesperado (${e.name}: ${e.message})`);
   }
-  const filtros = `${consultaM} · ${ai}–${af}` + (orgao ? ` · órgão: ${orgao}` : "");
+  const filtros = `${consultaM} · ${ai}–${af}` + (orgao ? ` · órgão: ${orgao}` : "") + (base === "tnu" ? " · base: TNU" : "");
   const linhas = [];
+  if (base === "tnu") {
+    for (let ano = ai; ano <= af; ano++) {
+      let dados;
+      try {
+        dados = await consultarTnu(consultaM, tipos, 1, 50, { data_inicio: `01/01/${ano}`, data_fim: `31/12/${ano}` }, "julgamento", "linha_do_tempo", [], fetchImpl, env);
+      } catch (e) {
+        if (e instanceof ErroDeParametro) return erroDeParametro(e);
+        if (e instanceof PesquisaNaoRealizada) {
+          if (!linhas.length) return carimboNaoRealizada(e.message);
+          return formatarLinhaDoTempo(linhas, filtros, `parou em ${ano} (${e.message.trim().replace(/\.$/, "").slice(0, 160)}); anos feitos: ${linhas[0].ano}–${linhas[linhas.length - 1].ano}`);
+        }
+        return carimboNaoRealizada(`erro inesperado em ${ano} (${e.name}: ${e.message})`);
+      }
+      const r = resumoResultadosPagina(dados.docs);
+      const res = Object.keys(ROTULOS_RESULTADO).filter((k) => r.contagem[k]).map((k) => [ROTULOS_RESULTADO[k], r.contagem[k]]);
+      linhas.push({ ano, total: dados.total, julgamentos: r.total_julgamentos, res });
+    }
+    return formatarLinhaDoTempo(linhas, filtros, "");
+  }
   // v1.8.1: ano depois do fim do acervo não é consultado — sairia zero, que aqui pareceria mudança de entendimento
   const ultimoAno = Number(ACERVO_TRF1_FIM.slice(-4));
   if (ai > ultimoAno) return carimboNaoRealizada(`os anos pedidos ficam depois do fim do acervo: ${AVISO_ACERVO_TRF1}`);

@@ -243,6 +243,7 @@ npx @anthropic-ai/mcpb@latest pack . Jurisprudencia-TRF1.mcpb
 
 ## Notas de implementação
 
+- **Sinal de situação da tese (v1.11.0).** Na ementa ou no dispositivo, expressões como "Questão de Ordem", "tema representativo", "afetação", "desafetação", "sobrestamento", "súmula cancelada", "revisão de tese", "superação" e "modulação" geram a linha 🚩. É sinal lexical, sem medição própria: serve para escolher o que abrir. A situação do tema se confere no BNP ou na página oficial de Temas Representativos da TNU (situações: julgado, em revisão, em julgamento, cancelado, sobrestado, desafetado).
 - **Auditoria de citações (v1.10.0).** `auditar_citacoes_trf1` não é a do TJRO: o TRF1 não expõe o fecho do voto, então a base é o
   índice do portal (relator, turma, data) e, na TNU, o fecho. Só o dígito verificador inválido é 🔴; relator, turma ou data que divergem
   são 🟠 com os dois valores; ✅ só quando algo foi comparado e bateu. Relator só com o sobrenome confere se for o último sobrenome de
